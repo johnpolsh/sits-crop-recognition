@@ -6,6 +6,34 @@ defaults:
 
 tags: ["finetunning", "prithvi_segmentation"]
 
+data:
+  train:
+    transforms:
+      - _target_: src.data.transforms.loose_bind_transform
+        transform:
+          _target_: src.data.transforms.Take
+          _partial_: True
+          indices: [1, 2, 3, 7, 8, 9]
+          dim: 1
+      - _target_: src.data.transforms.loose_bind_transform
+        transform:
+          _target_: src.data.transforms.Reshape
+          _partial_: True
+          shape: [-1, 128, 128]
+  val:
+    transforms:
+      - _target_: src.data.transforms.loose_bind_transform
+        transform:
+          _target_: src.data.transforms.Take
+          _partial_: True
+          indices: [1, 2, 3, 7, 8, 9]
+          dim: 1
+      - _target_: src.data.transforms.loose_bind_transform
+        transform:
+          _target_: src.data.transforms.Reshape
+          _partial_: True
+          shape: [-1, 128, 128]
+
 model:
   net:
     img_size: 128

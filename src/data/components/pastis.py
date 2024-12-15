@@ -11,7 +11,7 @@ from typing import Any, Callable, Literal, Optional, Union
 
 
 _PROPS = {
-    "img_size": 128,
+    "img_size": (128, 128),
     "num_classes": 20,
     "num_channels": 10,
     "folds": [1, 2, 3, 4, 5]
@@ -111,8 +111,8 @@ class PASTISDatasetS2(Dataset):
 
     def _load_data(self, patch_id: int) -> tuple[np.ndarray, np.ndarray]:
         data = (
-            self._load_patch_data_S2(patch_id),
-            self._load_segmentation_annotation(patch_id)
+            self._load_patch_data_S2(patch_id).astype(np.float32),
+            self._load_segmentation_annotation(patch_id).astype(np.int64)
             )
         return data
 

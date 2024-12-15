@@ -43,13 +43,11 @@ class PastisSubpatchedDatamodule(LightningDataModule):
         "subpatching_mode": "equidistant",
         "transforms": [
             loose_bind_transform(FromNumpy),
-            loose_bind_transform(partial(DType, dtype=torch.float32)),
             loose_bind_transform(Normalize)
         ],
         "target_transforms": [
             loose_bind_transform(partial(Take, indices=0, dim=0)),
-            loose_bind_transform(FromNumpy),
-            loose_bind_transform(partial(DType, dtype=torch.long))
+            loose_bind_transform(FromNumpy)
         ],
         "hparams": {
             "batch_size": 32,
