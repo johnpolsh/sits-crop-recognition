@@ -1,0 +1,107 @@
+_target_: src.data.pastis_subpatched_datamodule.PastisSubpatchedDatamodule
+data_dir: ${oc.env:PASTIS_DATA_DIR}
+train:
+  folds: [1, 2, 3]
+  subpatch_size: 3
+  metadata:
+    _target_: src.data.components.pastis.load_metadata
+    _partial_: True
+    data_dir: ${oc.env:PASTIS_DATA_DIR}
+    folds: [1, 2, 3]
+  subpatching_mode: "equidistant"
+  transforms:
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.FromNumpy
+        _partial_: True
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.DType
+        _partial_: True
+        dtype: float32
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: torchvision.transforms.Normalize
+        _partial_: True
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.Take
+        _partial_: True
+        indices: [1, 2, 3, 7, 8, 9]
+        dim: 1
+  target_transforms:
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.Take
+        _partial_: True
+        indices: 0
+        dim: 0
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.FromNumpy
+        _partial_: True
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.DType
+        _partial_: True
+        dtype: long
+        
+  hparams:
+    batch_size: 32
+    num_workers: 4
+    pin_memory: True
+    shuffle: True
+
+val:
+  folds: [4]
+  subpatch_size: 3
+  metadata:
+    _target_: src.data.components.pastis.load_metadata
+    _partial_: True
+    data_dir: ${oc.env:PASTIS_DATA_DIR}
+    folds: [4]
+  subpatching_mode: "equidistant"
+  transforms:
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.FromNumpy
+        _partial_: True
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.DType
+        _partial_: True
+        dtype: float32
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: torchvision.transforms.Normalize
+        _partial_: True
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.Take
+        _partial_: True
+        indices: [1, 2, 3, 7, 8, 9]
+        dim: 1
+  target_transforms:
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.Take
+        _partial_: True
+        indices: 0
+        dim: 0
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.FromNumpy
+        _partial_: True
+    - _target_: src.data.transforms.loose_bind_transform
+      transform:
+        _target_: src.data.transforms.DType
+        _partial_: True
+        dtype: long
+        
+  hparams:
+    batch_size: 32
+    num_workers: 4
+    pin_memory: True
+    shuffle: False
+    persistent_workers: True
+    

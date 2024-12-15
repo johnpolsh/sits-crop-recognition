@@ -1,0 +1,18 @@
+_target_: src.models.segmentation_module.SegmentationModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.0001
+
+net:
+  _target_: src.models.components.prithvi_segmentation.PrithviSegmentation
+  img_size: 256
+  in_chans: 6
+  num_frames: 3
+  num_classes: 2
+
+criterion:
+  _target_: torch.nn.CrossEntropyLoss
+  # NOTE: use '_partial_: true' only if you want to pass additional arguments within the model implementation, usually data dependent
+  ignore_index: 255

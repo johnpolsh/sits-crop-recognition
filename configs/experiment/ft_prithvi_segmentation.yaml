@@ -1,0 +1,20 @@
+#@package _global_
+
+defaults:
+  - /data: pastis_subpatched
+  - /model: prithvi_segmentation
+
+tags: ["finetunning", "prithvi_segmentation"]
+
+model:
+  net:
+    img_size: 128
+    num_classes: 20
+
+  criterion:
+    _target_: torch.nn.CrossEntropyLoss
+    ignore_index: 0
+  
+trainer:
+  gradient_clip_val: 0.1
+    
