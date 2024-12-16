@@ -7,7 +7,7 @@ albucore==0.0.16
 albumentations==1.4.10
 alembic==1.14.0
 annotated-types==0.7.0
-antlr4-python3-runtime==4.9.3
+antlr4-python3-runtime==4.13.2
 asttokens==3.0.0
 attrs==24.2.0
 autopage==0.5.2
