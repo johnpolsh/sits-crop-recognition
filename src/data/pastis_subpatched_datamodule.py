@@ -54,6 +54,7 @@ class PastisSubpatchedDatamodule(LightningDataModule):
             "num_workers": 4,
             "pin_memory": True,
             "shuffle": True,
+            "persistent_workers": True,
         },
     }
     _VAL_DEFAULTS: PastisParams = {
@@ -63,7 +64,6 @@ class PastisSubpatchedDatamodule(LightningDataModule):
         "subpatching_mode": "equidistant",
         "transforms": [
             loose_bind_transform(FromNumpy),
-            loose_bind_transform(partial(DType, dtype=torch.float32)),
             loose_bind_transform(Normalize)
         ],
         "target_transforms": [

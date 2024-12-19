@@ -6,6 +6,7 @@ defaults:
   - _self_
   - callbacks: default
   - logger: null # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
+  - plugins: default
   - trainer: default
   - paths: default
   - extras: default

@@ -19,7 +19,7 @@ class PrithviSegmentation(nn.Module):
             weights: Optional[Literal["default"]] = "default",
             decoder: Literal["FCNDecoder"] = "FCNDecoder" # TODO: UNetDecoder
             ):
-        assert weights in ["default"], f"{weights=} is not supported"
+        assert weights in ["default"], f"Got {weights=}, expected one of ['default']"
         assert len(bands) == in_chans, f"{bands=} must have {in_chans} elements"
         super().__init__()
         self.img_size = img_size

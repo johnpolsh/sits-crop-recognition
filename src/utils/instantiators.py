@@ -54,3 +54,26 @@ def instantiate_loggers(logger_cfg: DictConfig) -> List[Logger]:
             logger.append(hydra.utils.instantiate(lg_conf))
 
     return logger
+
+
+def instantiate_plugins(plugins_cfg: DictConfig) -> List:
+    """Instantiates plugins from config.
+
+    :param plugins_cfg: A DictConfig object containing plugin configurations.
+    :return: A list of instantiated plugins.
+    """
+    plugins: List = []
+
+    if not plugins_cfg:
+        log.warning("No plugin configs found! Skipping...")
+        return plugins
+
+    if not isinstance(plugins_cfg, DictConfig):
+        raise TypeError("Plugins config must be a DictConfig!")
+
+    for _, pl_conf in plugins_cfg.items():
+        if isinstance(pl_conf, DictConfig) and "_target_" in pl_conf:
+            log.info(f"Instantiating plugin <{pl_conf._target_}>")
+            plugins.append(hydra.utils.instantiate(pl_conf))
+
+    return plugins[0] if len(plugins) == 1 else plugins

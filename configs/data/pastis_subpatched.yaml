@@ -1,13 +1,13 @@
 _target_: src.data.pastis_subpatched_datamodule.PastisSubpatchedDatamodule
-data_dir: ${oc.env:PASTIS_DATA_DIR}
+data_dir: &var_data_dir ${oc.env:PASTIS_DATA_DIR}
 train:
-  folds: [1, 2, 3]
+  folds: &train_folds [1, 2, 3]
   subpatch_size: 3
   metadata:
     _target_: src.data.components.pastis.load_metadata
     _partial_: True
-    data_dir: ${oc.env:PASTIS_DATA_DIR}
-    folds: [1, 2, 3]
+    data_dir: *var_data_dir
+    folds: *train_folds
   subpatching_mode: "equidistant"
   transforms:
     - _target_: src.data.transforms.loose_bind_transform
@@ -29,21 +29,20 @@ train:
       transform:
         _target_: src.data.transforms.FromNumpy
         _partial_: True
-        
   hparams:
-    batch_size: 16
+    batch_size: 32
     num_workers: 4
     pin_memory: True
     shuffle: True
-
+    persistent_workers: True
 val:
-  folds: [4]
+  folds: &val_folds [4]
   subpatch_size: 3
   metadata:
     _target_: src.data.components.pastis.load_metadata
     _partial_: True
-    data_dir: ${oc.env:PASTIS_DATA_DIR}
-    folds: [4]
+    data_dir: *var_data_dir
+    folds: *val_folds
   subpatching_mode: "equidistant"
   transforms:
     - _target_: src.data.transforms.loose_bind_transform
@@ -65,7 +64,6 @@ val:
       transform:
         _target_: src.data.transforms.FromNumpy
         _partial_: True
-        
   hparams:
     batch_size: 32
     num_workers: 4

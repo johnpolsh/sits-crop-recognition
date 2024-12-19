@@ -2,27 +2,35 @@
 
 import torch
 from lightning import LightningModule
+from pathlib import Path
 from torch import nn, optim
+from torch.nn.modules.loss import _Loss
 from torchmetrics import MeanMetric
-from torchmetrics.classification import (
-    Accuracy,
-    JaccardIndex
-)
-from torchmetrics.segmentation import (
-    DiceScore,
-    MeanIoU
-)
-from typing import Callable, Literal, Optional, Union
+from typing import Any, Callable, Literal, Optional, TypedDict, Union
 from ..data.preprocessing import compute_class_weight
 
 
-class BaseSegmentationModule(LightningModule):
+_on_debug_hook = Callable[[Any, tuple[torch.Tensor, torch.Tensor]], None]
+
+
+class MetricParam(TypedDict):
+    alias: Optional[str]
+    metric: Callable[..., nn.Module]
+
+
+class BaseModule(LightningModule):
     def __init__(
             self,
             net: nn.Module,
-            criterion: Union[nn.Module, Callable[..., nn.Module]] = nn.CrossEntropyLoss(),
+            criterion: Union[_Loss, Callable[..., _Loss]] = nn.CrossEntropyLoss(),
             optimizer: Callable[..., optim.Optimizer] = optim.Adam,
             scheduler: Optional[Callable[..., optim.lr_scheduler._LRScheduler]] = None,
+            train_metrics: list[MetricParam] = [],
+            val_metrics: list[MetricParam] = [],
+            test_metrics: list[MetricParam] = [],
+            on_debug_hook: Optional[_on_debug_hook] = None,
+            on_debug_val: Optional[_on_debug_hook] = None,
+            on_debug_test: Optional[_on_debug_hook] = None,
             class_weight_strategy: Literal["none", "per-batch"] = "none",
             ignore_hyparams: list[str] = ["net", "criterion"]
             ):
@@ -34,62 +42,33 @@ class BaseSegmentationModule(LightningModule):
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.net = net
+        self.on_debug_hook = on_debug_hook
+        self.on_debug_val = on_debug_val
+        self.on_debug_test = on_debug_test
 
         assert hasattr(net, "num_classes"),\
             "Expected net to have num_classes attribute"
-        if class_weight_strategy in ["per-batch"]:
-            assert not isinstance(criterion, nn.Module),\
-                "'per-batch' class weight strategy requires criterion to be a constructor"
         self.class_weight_strategy = class_weight_strategy
 
         self.save_hyperparameters(ignore=ignore_hyparams)
 
         self.train_loss = MeanMetric()
-        self.train_jaccard = JaccardIndex(
-            task="multiclass",
-            num_classes=net.num_classes,
-            average="weighted"
-            )
-        self.train_iou = MeanIoU(
-            num_classes=net.num_classes,
-            include_background=True,
-            input_format="one-hot"
-            )
+        self.train_metrics = nn.ModuleDict({
+            (param["alias"] or param["metric"].__name__): param["metric"]()
+            for param in train_metrics
+        })
 
         self.val_loss = MeanMetric()
-        self.val_jaccard = JaccardIndex(
-            task="multiclass",
-            num_classes=net.num_classes,
-            average="weighted"
-            )
-        self.val_iou = MeanIoU(
-            num_classes=net.num_classes,
-            include_background=True,
-            input_format="one-hot"
-            )
+        self.val_metrics = nn.ModuleDict({
+            (param["alias"] or param["metric"].__name__): param["metric"]()
+            for param in val_metrics
+        })
 
         self.test_loss = MeanMetric()
-        self.test_accuracy = Accuracy(
-            task="multiclass",
-            num_classes=net.num_classes,
-            average="weighted"
-            )
-        self.test_jaccard = JaccardIndex(
-            task="multiclass",
-            num_classes=net.num_classes,
-            average="weighted"
-            )
-        self.test_iou = MeanIoU(
-            num_classes=net.num_classes,
-            include_background=True,
-            input_format="one-hot"
-            )
-        self.test_dice = DiceScore(
-            num_classes=net.num_classes,
-            include_background=True,
-            average="weighted",
-            input_format="one-hot"
-            )
+        self.test_metrics = nn.ModuleDict({
+            (param["alias"] or param["metric"].__name__): param["metric"]()
+            for param in test_metrics
+        })
 
     def _calculate_loss(
             self,
@@ -108,14 +87,12 @@ class BaseSegmentationModule(LightningModule):
         return criterion(logits, y)
 
     def on_train_epoch_start(self):
-        self.train_loss.reset()
-        self.train_jaccard.reset()
-        self.train_iou.reset()
+        for metric in self.train_metrics.values():
+            metric.reset()
 
     def on_train_epoch_end(self):
-        self.log("train_loss", self.train_loss.compute())
-        self.log("train_jaccard", self.train_jaccard.compute())
-        self.log("train_iou", self.train_iou.compute())
+        for name, metric in self.train_metrics.items():
+            self.log(f"train/{name}", metric.compute())
 
     def training_step(
             self,
@@ -126,23 +103,23 @@ class BaseSegmentationModule(LightningModule):
         logits = self.forward(x)
 
         loss = self._calculate_loss(logits, y)
-        self.train_loss(loss)
+        self.train_loss.update(loss)
 
-        pred = logits.argmax(dim=1)
-        self.train_jaccard(pred, y)
-        self.train_iou(pred, y)
+        for metric in self.train_metrics.values():
+            metric.update(logits, y)
+
+        if self.on_debug_hook is not None:
+            self.on_debug_hook(self, (logits, y))
 
         return loss
 
     def on_validation_epoch_start(self):
-        self.val_loss.reset()
-        self.val_jaccard.reset()
-        self.val_iou.reset()
+        for metric in self.val_metrics.values():
+            metric.reset()
 
     def on_validation_epoch_end(self):
-        self.log("val_loss", self.val_loss.compute())
-        self.log("val_jaccard", self.val_jaccard.compute())
-        self.log("val_iou", self.val_iou.compute())
+        for name, metric in self.val_metrics.items():
+            self.log(f"val/{name}", metric.compute())
 
     def validation_step(
             self,
@@ -153,26 +130,42 @@ class BaseSegmentationModule(LightningModule):
         logits = self.forward(x)
 
         loss = self._calculate_loss(logits, y)
-        self.val_loss(loss)
+        self.val_loss.update(loss)
 
-        pred = logits.argmax(dim=1)
-        self.val_jaccard(pred, y)
-        self.val_iou(pred, y)
+        for metric in self.val_metrics.values():
+            metric.update(logits, y)
+
+        if self.on_debug_val is not None:
+            self.on_debug_val(self, (logits, y))
     
         return loss
 
     def on_test_epoch_start(self):
-        ...
+        for metric in self.test_metrics.values():
+            metric.reset()
 
     def on_test_epoch_end(self):
-        ...
+        for name, metric in self.test_metrics.items():
+            self.log(f"test/{name}", metric.compute())
 
     def test_step(
             self,
             batch: tuple[torch.Tensor, torch.Tensor],
             batch_idx: int
             ):
-        raise NotImplementedError
+        x, y = batch
+        logits = self.forward(x)
+
+        loss = self._calculate_loss(logits, y)
+        self.test_loss.update(loss)
+
+        for metric in self.test_metrics.values():
+            metric.update(logits, y)
+
+        if self.on_debug_test is not None:
+            self.on_debug_test(self, (logits, y))
+        
+        return loss
 
     def configure_optimizers(self):
         optimizer = self.optimizer(self.net.parameters())
@@ -188,3 +181,9 @@ class BaseSegmentationModule(LightningModule):
             scheduler.append(config)
         
         return [optimizer], scheduler
+    
+    def export_onnx(self, filename: Union[str, Path]):
+        assert hasattr(self, "example_input_array"),\
+            "Exporting to ONNX requires 'example_input_array' attribute"
+        
+        ... # TODO

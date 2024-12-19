@@ -11,8 +11,10 @@ net:
   in_chans: 6
   num_frames: 3
   num_classes: 2
+  weights: "default"
 
 criterion:
   _target_: torch.nn.CrossEntropyLoss
-  # NOTE: use '_partial_: true' only if you want to pass additional arguments within the model implementation, usually data dependent
+  # NOTE: use '_partial_: true' only if you want to pass additional arguments
+  #   within the model implementation, usually data dependent
   ignore_index: 255

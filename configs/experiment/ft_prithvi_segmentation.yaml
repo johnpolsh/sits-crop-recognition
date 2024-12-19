@@ -3,46 +3,59 @@
 defaults:
   - /data: pastis_subpatched
   - /model: prithvi_segmentation
+  - override /plugins: mixed_precision
 
 tags: ["finetunning", "prithvi_segmentation"]
 
+_indices: &var_data_transform_indices [1, 2, 3, 7, 8, 9]
+_shape: &var_data_transform_shape [-1, 128, 128]
+_num_frames: &var_num_frames 3
+_num_classes: &var_num_classes 20
+
 data:
   train:
+    subpatch_size: *var_num_frames
     transforms:
       - _target_: src.data.transforms.loose_bind_transform
         transform:
           _target_: src.data.transforms.Take
           _partial_: True
-          indices: [1, 2, 3, 7, 8, 9]
+          indices: *var_data_transform_indices
           dim: 1
       - _target_: src.data.transforms.loose_bind_transform
         transform:
           _target_: src.data.transforms.Reshape
           _partial_: True
-          shape: [-1, 128, 128]
+          shape: *var_data_transform_shape
   val:
+    subpatch_size: *var_num_frames
     transforms:
       - _target_: src.data.transforms.loose_bind_transform
         transform:
           _target_: src.data.transforms.Take
           _partial_: True
-          indices: [1, 2, 3, 7, 8, 9]
+          indices: *var_data_transform_indices
           dim: 1
       - _target_: src.data.transforms.loose_bind_transform
         transform:
           _target_: src.data.transforms.Reshape
           _partial_: True
-          shape: [-1, 128, 128]
+          shape: *var_data_transform_shape
 
 model:
   net:
     img_size: 128
-    num_classes: 20
-
+    num_classes: *var_num_classes
+    num_frames: *var_num_frames
   criterion:
     _target_: torch.nn.CrossEntropyLoss
     ignore_index: 0
   
+plugins:
+  mixed_precision:
+    device: ${local.preferred_device}
+
 trainer:
+  accelerator: ${local.preferred_device}
   gradient_clip_val: 0.1
     

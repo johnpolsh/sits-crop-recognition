@@ -32,6 +32,7 @@ from src.utils import (
     get_metric_value,
     instantiate_callbacks,
     instantiate_loggers,
+    instantiate_plugins,
     log_hyperparameters,
     task_wrapper,
 )
@@ -66,8 +67,16 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     log.info("Instantiating loggers...")
     logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
 
+    log.info("Instantiating plugins...")
+    plugins: List = instantiate_plugins(cfg.get("plugins"))
+
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
-    trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
+    trainer: Trainer = hydra.utils.instantiate(
+        cfg.trainer,
+        callbacks=callbacks,
+        logger=logger,
+        plugins=plugins,
+        )
 
     object_dict = {
         "cfg": cfg,
