@@ -39,7 +39,7 @@ def _log_segmentation_prediction(
         seg_module: "SegmentationModule",
         batch: tuple[torch.Tensor, torch.Tensor],
         batch_idx: int,
-        logits: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        logits: torch.Tensor
         ):
     if batch_idx > 0 or seg_module.trainer.sanity_checking:
         return

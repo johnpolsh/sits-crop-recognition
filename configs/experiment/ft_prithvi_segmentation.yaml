@@ -87,6 +87,9 @@ model:
     step_size: 3
     gamma: 0.5
   class_weight_strategy: "per-batch"
+  optimizer_strategy:
+    strategy: backbone-lr
+    lr: 0.00001
 
 trainer:
   max_epochs: 60

@@ -26,8 +26,14 @@ def extract_signature(cls: Callable) -> dict[str, inspect.Parameter]:
         signature = inspect.signature(cls.__init__)
     else:
         signature = inspect.signature(cls)
-    parameters = {k: v for k, v in signature.parameters.items() if k != "self"}
-    return parameters
+    signature = {k: v for k, v in signature.parameters.items() if k != "self"}
+    return signature
+
+
+def extract_default_args(cls: Callable) -> dict[str, Any]:
+    signature = extract_signature(cls)
+    defaults = {k: v.default for k, v in signature.items() if v.default is not inspect.Parameter.empty}
+    return defaults
 
 
 def loose_bind_kwargs(warn_unused: bool = False) -> Callable:

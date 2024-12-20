@@ -27,7 +27,7 @@ class PrithviSegmentation(nn.Module):
         self.num_frames = num_frames
         self.num_classes = num_classes
 
-        self.backbone = EncoderDecoderFactory().build_model(
+        self.prithvi_base = EncoderDecoderFactory().build_model(
             task="segmentation",
             backbone="prithvi_vit_100",
             decoder=decoder,
@@ -40,6 +40,15 @@ class PrithviSegmentation(nn.Module):
             necks=None,
             rescale=False
             )
+        self.backbone_params = (
+            list(self.prithvi_base.encoder.parameters())
+            )
+        self.head_params = (
+            list(self.prithvi_base.decoder.parameters()) +
+            list(self.prithvi_base.head.parameters()) +
+            list(self.prithvi_base.aux_heads.parameters())
+            )
+        
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         _, C, F, H, W = x.shape
@@ -50,7 +59,7 @@ class PrithviSegmentation(nn.Module):
         assert F == self.num_frames,\
             f"Expected {F=} to be equal to {self.num_frames=}"
         
-        result = self.backbone(x)
+        result = self.prithvi_base(x)
         logits = result.output
 
         return logits
