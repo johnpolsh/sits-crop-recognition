@@ -11,15 +11,51 @@ from torchmetrics.segmentation import (
     MeanIoU
 )
 from .base_module import _on_debug_hook, BaseModule
-
+from ..utils.plotting import (
+    get_channels_permuted_tensor,
+    make_grid_tensor,
+    mask_tensor_to_rgb_tensor,
+    normalize_img_tensor
+)
 
 def _log_segmentation_prediction(
         seg_module: "SegmentationModule",
-        y_yhat: tuple[torch.Tensor, torch.Tensor]
+        batch: tuple[torch.Tensor, torch.Tensor],
+        batch_idx: int,
+        logits: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
         ):
-    y, yhat = y_yhat
-    # TODO
-    ...
+    if batch_idx > 0 or seg_module.trainer.sanity_checking:
+        return
+
+    idx = -1
+    x, y = batch
+    x = x[idx].cpu().detach()
+    x = normalize_img_tensor(x)
+    x = x.view(seg_module.net.in_chans, -1, *x.shape[-2:])
+    x = get_channels_permuted_tensor(x, [0, 1, 2])
+    x = make_grid_tensor(x, pad_value=1)
+    seg_module.logger.experiment.add_image(
+        "Input",
+        x,
+        global_step=seg_module.global_step
+        )
+
+    y = y[idx].cpu().detach()
+    y = mask_tensor_to_rgb_tensor(y, seg_module.net.num_classes)
+    seg_module.logger.experiment.add_image(
+        "Ground Truth",
+        y,
+        global_step=seg_module.global_step
+        )
+
+    yhat = torch.argmax(logits, dim=1)
+    yhat = yhat[idx].cpu().detach()
+    yhat = mask_tensor_to_rgb_tensor(yhat, seg_module.net.num_classes)
+    seg_module.logger.experiment.add_image(
+        "Prediction",
+        yhat,
+        global_step=seg_module.global_step
+        )
 
 
 class SegmentationModule(BaseModule):
@@ -60,7 +96,7 @@ class SegmentationModule(BaseModule):
                 MeanIoU(
                     num_classes=net.num_classes,
                     include_background=False,
-                    input_format="one-hot"
+                    input_format="index"
                     )
                 )
     
@@ -70,7 +106,7 @@ class SegmentationModule(BaseModule):
                 Accuracy(
                     task="multiclass",
                     num_classes=net.num_classes,
-                    average="weighted"
+                    average="macro"
                     )
                 )
             self.val_metrics.add_module(
@@ -78,7 +114,7 @@ class SegmentationModule(BaseModule):
                 JaccardIndex(
                     task="multiclass",
                     num_classes=net.num_classes,
-                    average="weighted"
+                    average="macro"
                     )
                 )
             self.val_metrics.add_module(
@@ -86,7 +122,7 @@ class SegmentationModule(BaseModule):
                 MeanIoU(
                     num_classes=net.num_classes,
                     include_background=False,
-                    input_format="one-hot"
+                    input_format="index"
                     )
                 )
         
@@ -96,7 +132,7 @@ class SegmentationModule(BaseModule):
                 Accuracy(
                     task="multiclass",
                     num_classes=net.num_classes,
-                    average="weighted"
+                    average="macro"
                     )
                 )
             self.test_metrics.add_module(
@@ -104,7 +140,7 @@ class SegmentationModule(BaseModule):
                 JaccardIndex(
                     task="multiclass",
                     num_classes=net.num_classes,
-                    average="weighted"
+                    average="macro"
                     )
                 )
             self.test_metrics.add_module(
@@ -112,7 +148,7 @@ class SegmentationModule(BaseModule):
                 MeanIoU(
                     num_classes=net.num_classes,
                     include_background=False,
-                    input_format="one-hot"
+                    input_format="index"
                     )
                 )
             self.test_metrics.add_module(
@@ -120,12 +156,11 @@ class SegmentationModule(BaseModule):
                 DiceScore(
                     num_classes=net.num_classes,
                     include_background=False,
-                    average="weighted",
-                    input_format="one-hot"
+                    average="macro",
+                    input_format="index"
                     )
                 )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         logits = self.net(x)
         return logits
-        

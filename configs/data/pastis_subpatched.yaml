@@ -62,4 +62,35 @@ val:
     pin_memory: True
     shuffle: False
     persistent_workers: True
+test:
+  folds: &var_test_folds [5]
+  subpatch_size: 3
+  metadata:
+    _target_: src.data.components.pastis.load_metadata
+    _partial_: True
+    data_dir: *var_data_dir
+    folds: *var_test_folds
+  subpatching_mode: "equidistant"
+  transforms:
+    _target_: src.data.transforms.loose_bind_transforms
+    transforms:
+      - _target_: src.data.transforms.FromNumpy
+        _partial_: True
+      - _target_: torchvision.transforms.Normalize
+        _partial_: True
+  target_transforms:
+    _target_: src.data.transforms.loose_bind_transforms
+    transforms:
+      - _target_: src.data.transforms.Take
+        _partial_: True
+        indices: 0
+        dim: 0
+      - _target_: src.data.transforms.FromNumpy
+        _partial_: True
+  hparams:
+    batch_size: 32
+    num_workers: 4
+    pin_memory: True
+    shuffle: False
+    persistent_workers: True
     

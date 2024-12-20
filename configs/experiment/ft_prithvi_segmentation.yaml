@@ -7,10 +7,19 @@ defaults:
 
 tags: ["finetunning", "prithvi_segmentation"]
 
-_indices: &var_data_transform_indices [1, 2, 3, 7, 8, 9]
+_indices: &var_data_transform_indices [0, 1, 2, 7, 8, 9]
 _shape: &var_data_transform_shape [-1, 128, 128]
 _num_frames: &var_num_frames 3
 _num_classes: &var_num_classes 20
+_monitor_metric: &var_monitor_metric "val/iou"
+
+callbacks:
+  model_checkpoint:
+    monitor: *var_monitor_metric
+    mode: "max"
+  early_stopping:
+    monitor: *var_monitor_metric
+    mode: "max"
 
 data:
   train:
@@ -18,6 +27,10 @@ data:
     transforms:
       _target_: src.data.transforms.loose_bind_transforms
       transforms:
+        - _target_: src.data.transforms.FromNumpy
+          _partial_: True
+        - _target_: torchvision.transforms.Normalize
+          _partial_: True
         - _target_: src.data.transforms.Take
           _partial_: True
           indices: *var_data_transform_indices
@@ -25,12 +38,31 @@ data:
         - _target_: src.data.transforms.Reshape
           _partial_: True
           shape: *var_data_transform_shape
-        - _target_: src.data.transforms.
   val:
     subpatch_size: *var_num_frames
     transforms:
       _target_: src.data.transforms.loose_bind_transforms
       transforms:
+        - _target_: src.data.transforms.FromNumpy
+          _partial_: True
+        - _target_: torchvision.transforms.Normalize
+          _partial_: True
+        - _target_: src.data.transforms.Take
+          _partial_: True
+          indices: *var_data_transform_indices
+          dim: 1
+        - _target_: src.data.transforms.Reshape
+          _partial_: True
+          shape: *var_data_transform_shape
+  test:
+    subpatch_size: *var_num_frames
+    transforms:
+      _target_: src.data.transforms.loose_bind_transforms
+      transforms:
+        - _target_: src.data.transforms.FromNumpy
+          _partial_: True
+        - _target_: torchvision.transforms.Normalize
+          _partial_: True
         - _target_: src.data.transforms.Take
           _partial_: True
           indices: *var_data_transform_indices
@@ -46,13 +78,10 @@ model:
     num_frames: *var_num_frames
   criterion:
     _target_: torch.nn.CrossEntropyLoss
-    ignore_index: 0
-  
-plugins:
-  mixed_precision:
-    device: ${local.preferred_device}
+    #ignore_index: 0
+  class_weight_strategy: "per-batch"
 
 trainer:
-  accelerator: ${local.preferred_device}
+  max_epochs: 60
   gradient_clip_val: 0.1
     

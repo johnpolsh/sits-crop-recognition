@@ -10,7 +10,7 @@ from typing import Any, Callable, Literal, Optional, TypedDict, Union
 from ..data.preprocessing import compute_class_weight
 
 
-_on_debug_hook = Callable[[Any, tuple[torch.Tensor, torch.Tensor]], None]
+_on_debug_hook = Callable[[Any, tuple[torch.Tensor, ...], int, torch.Tensor], None]
 
 
 class MetricParam(TypedDict):
@@ -45,6 +45,8 @@ class BaseModule(LightningModule):
         self.on_debug_hook = on_debug_hook
         self.on_debug_val = on_debug_val
         self.on_debug_test = on_debug_test
+
+        torch.set_float32_matmul_precision("medium")
 
         assert hasattr(net, "num_classes"),\
             "Expected net to have num_classes attribute"
@@ -87,12 +89,14 @@ class BaseModule(LightningModule):
         return criterion(logits, y)
 
     def on_train_epoch_start(self):
+        self.train_loss.reset()
         for metric in self.train_metrics.values():
             metric.reset()
 
     def on_train_epoch_end(self):
+        self.log("train/loss", self.train_loss.compute(), prog_bar=True)
         for name, metric in self.train_metrics.items():
-            self.log(f"train/{name}", metric.compute())
+            self.log(f"train/{name}", metric.compute(), prog_bar=True)
 
     def training_step(
             self,
@@ -105,21 +109,26 @@ class BaseModule(LightningModule):
         loss = self._calculate_loss(logits, y)
         self.train_loss.update(loss)
 
+        self.log("train/loss", loss, on_step=True, on_epoch=False, prog_bar=True)
+
+        pred = torch.argmax(logits, dim=1)
         for metric in self.train_metrics.values():
-            metric.update(logits, y)
+            metric.update(pred, y)
 
         if self.on_debug_hook is not None:
-            self.on_debug_hook(self, (logits, y))
+            self.on_debug_hook(self, batch, batch_idx, logits)
 
         return loss
 
     def on_validation_epoch_start(self):
+        self.val_loss.reset()
         for metric in self.val_metrics.values():
             metric.reset()
 
     def on_validation_epoch_end(self):
+        self.log("val/loss", self.val_loss.compute(), prog_bar=True)
         for name, metric in self.val_metrics.items():
-            self.log(f"val/{name}", metric.compute())
+            self.log(f"val/{name}", metric.compute(), prog_bar=True)
 
     def validation_step(
             self,
@@ -132,19 +141,22 @@ class BaseModule(LightningModule):
         loss = self._calculate_loss(logits, y)
         self.val_loss.update(loss)
 
+        pred = torch.argmax(logits, dim=1)
         for metric in self.val_metrics.values():
-            metric.update(logits, y)
+            metric.update(pred, y)
 
         if self.on_debug_val is not None:
-            self.on_debug_val(self, (logits, y))
+            self.on_debug_val(self, batch, batch_idx, logits)
     
         return loss
 
     def on_test_epoch_start(self):
+        self.test_loss.reset()
         for metric in self.test_metrics.values():
             metric.reset()
 
     def on_test_epoch_end(self):
+        self.log("test/loss", self.test_loss.compute())
         for name, metric in self.test_metrics.items():
             self.log(f"test/{name}", metric.compute())
 
@@ -159,11 +171,12 @@ class BaseModule(LightningModule):
         loss = self._calculate_loss(logits, y)
         self.test_loss.update(loss)
 
+        pred = torch.argmax(logits, dim=1)
         for metric in self.test_metrics.values():
-            metric.update(logits, y)
+            metric.update(pred, y)
 
         if self.on_debug_test is not None:
-            self.on_debug_test(self, (logits, y))
+            self.on_debug_test(self, batch, batch_idx, logits)
         
         return loss
 

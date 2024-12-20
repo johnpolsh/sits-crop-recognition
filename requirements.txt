@@ -1,7 +1,7 @@
 torch
 torchvision
 lightning
-torchmetrics==1.6.0
+torchmetrics
 
 geopandas
 

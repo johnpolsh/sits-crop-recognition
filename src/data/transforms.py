@@ -32,7 +32,7 @@ class Take:
             indices: Union[int, list[int]],
             dim: int = 0
             ):
-        self.indices = indices
+        self.indices = tuple(indices) if isinstance(indices, list) else indices
         self.dim = dim
 
     def __call__(self, data: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
@@ -44,7 +44,7 @@ class Take:
 
 class Reshape:
     def __init__(self, shape: tuple[int, ...]):
-        self.shape = shape
+        self.shape = tuple(shape)
 
     def __call__(self, data: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
         return data.reshape(self.shape)
