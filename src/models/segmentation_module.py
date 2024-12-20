@@ -55,7 +55,7 @@ def _log_segmentation_prediction(
     seg_module.logger.experiment.add_image(
         f"{stage}/input",
         x,
-        global_step=seg_module.global_step
+        global_step=seg_module.current_epoch
         )
 
     y = y[idx].cpu().detach()
@@ -63,7 +63,7 @@ def _log_segmentation_prediction(
     seg_module.logger.experiment.add_image(
         f"{stage}/groud_truth",
         y,
-        global_step=seg_module.global_step
+        global_step=seg_module.current_epoch
         )
 
     yhat = torch.argmax(logits, dim=1)
@@ -72,7 +72,7 @@ def _log_segmentation_prediction(
     seg_module.logger.experiment.add_image(
         f"{stage}/prediction",
         yhat,
-        global_step=seg_module.global_step
+        global_step=seg_module.current_epoch
         )
 
 
