@@ -1,6 +1,7 @@
 #
 
 import torch
+from lightning.pytorch.trainer.states import RunningStage
 from torch import nn
 from torchmetrics.classification import (
     Accuracy,
@@ -10,6 +11,7 @@ from torchmetrics.segmentation import (
     DiceScore,
     MeanIoU
 )
+from typing import Optional
 from .base_module import _on_debug_hook, BaseModule
 from ..utils.plotting import (
     get_channels_permuted_tensor,
@@ -17,6 +19,21 @@ from ..utils.plotting import (
     mask_tensor_to_rgb_tensor,
     normalize_img_tensor
 )
+
+
+def _get_stage_name(stage: Optional[RunningStage]) -> str:
+    if stage == RunningStage.TRAINING:
+        return "train"
+    if stage == RunningStage.SANITY_CHECKING:
+        return "sanity_check"
+    if stage == RunningStage.VALIDATING:
+        return "val"
+    if stage == RunningStage.TESTING:
+        return "test"
+    if stage == RunningStage.PREDICTING:
+        return "predict"
+    return "unknown"
+
 
 def _log_segmentation_prediction(
         seg_module: "SegmentationModule",
@@ -27,9 +44,9 @@ def _log_segmentation_prediction(
     if batch_idx > 0 or seg_module.trainer.sanity_checking:
         return
     
-    stage = seg_module.trainer.state.stage or "unknown"
+    stage = _get_stage_name(seg_module.trainer.state.stage)
 
-    idx = -1
+    idx = 1
     x, y = batch
     x = x[idx].cpu().detach()
     x = normalize_img_tensor(x)
@@ -94,14 +111,6 @@ class SegmentationModule(BaseModule):
                     average="weighted"
                     )
                 )
-            self.train_metrics.add_module(
-                "iou",
-                MeanIoU(
-                    num_classes=net.num_classes,
-                    include_background=False,
-                    input_format="index"
-                    )
-                )
     
         if not no_default_val_metrics:
             self.val_metrics.add_module(
@@ -124,7 +133,16 @@ class SegmentationModule(BaseModule):
                 "iou",
                 MeanIoU(
                     num_classes=net.num_classes,
-                    include_background=False,
+                    include_background=True,
+                    input_format="index"
+                    )
+                )
+            self.val_metrics.add_module(
+                "dice",
+                DiceScore(
+                    num_classes=net.num_classes,
+                    include_background=True,
+                    average="macro",
                     input_format="index"
                     )
                 )
@@ -150,7 +168,7 @@ class SegmentationModule(BaseModule):
                 "iou",
                 MeanIoU(
                     num_classes=net.num_classes,
-                    include_background=False,
+                    include_background=True,
                     input_format="index"
                     )
                 )
@@ -158,7 +176,7 @@ class SegmentationModule(BaseModule):
                 "dice",
                 DiceScore(
                     num_classes=net.num_classes,
-                    include_background=False,
+                    include_background=True,
                     average="macro",
                     input_format="index"
                     )

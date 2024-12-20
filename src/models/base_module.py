@@ -187,7 +187,7 @@ class BaseModule(LightningModule):
         scheduler = []
         if self.scheduler is not None:
             config = {
-                "scheduler": self.scheduler,
+                "scheduler": self.scheduler(optimizer),
                 "interval": "epoch",
                 "frequency": 1,
                 "strict": True
