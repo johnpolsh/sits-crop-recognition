@@ -88,8 +88,9 @@ model:
     gamma: 0.5
   class_weight_strategy: "per-batch"
   optimizer_strategy:
-    strategy: backbone-lr
-    lr: 0.00001
+    strategy: freeze
+    freeze_step: 10
+    backbone_lr: 5e-6
 
 trainer:
   max_epochs: 60
