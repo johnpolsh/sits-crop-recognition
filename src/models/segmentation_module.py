@@ -26,16 +26,17 @@ def _log_segmentation_prediction(
         ):
     if batch_idx > 0 or seg_module.trainer.sanity_checking:
         return
+    
+    stage = seg_module.trainer.state.stage or "unknown"
 
     idx = -1
     x, y = batch
     x = x[idx].cpu().detach()
     x = normalize_img_tensor(x)
-    x = x.view(seg_module.net.in_chans, -1, *x.shape[-2:])
-    x = get_channels_permuted_tensor(x, [0, 1, 2])
+    x = get_channels_permuted_tensor(x, [2, 1, 0])
     x = make_grid_tensor(x, pad_value=1)
     seg_module.logger.experiment.add_image(
-        "Input",
+        f"{stage}/input",
         x,
         global_step=seg_module.global_step
         )
@@ -43,7 +44,7 @@ def _log_segmentation_prediction(
     y = y[idx].cpu().detach()
     y = mask_tensor_to_rgb_tensor(y, seg_module.net.num_classes)
     seg_module.logger.experiment.add_image(
-        "Ground Truth",
+        f"{stage}/groud_truth",
         y,
         global_step=seg_module.global_step
         )
@@ -52,7 +53,7 @@ def _log_segmentation_prediction(
     yhat = yhat[idx].cpu().detach()
     yhat = mask_tensor_to_rgb_tensor(yhat, seg_module.net.num_classes)
     seg_module.logger.experiment.add_image(
-        "Prediction",
+        f"{stage}/prediction",
         yhat,
         global_step=seg_module.global_step
         )
@@ -63,6 +64,7 @@ class SegmentationModule(BaseModule):
             self,
             net: nn.Module,
             on_debug_val: _on_debug_hook = _log_segmentation_prediction,
+            on_debug_test: _on_debug_hook = _log_segmentation_prediction,
             no_default_train_metrics: bool = False,
             no_default_val_metrics: bool = False,
             no_default_test_metrics: bool = False,
@@ -71,6 +73,7 @@ class SegmentationModule(BaseModule):
         super().__init__(
             net=net,
             on_debug_val=on_debug_val,
+            on_debug_test=on_debug_test,
             **kwargs
             )
 

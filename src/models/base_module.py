@@ -108,7 +108,6 @@ class BaseModule(LightningModule):
 
         loss = self._calculate_loss(logits, y)
         self.train_loss.update(loss)
-
         self.log("train/loss", loss, on_step=True, on_epoch=False, prog_bar=True)
 
         pred = torch.argmax(logits, dim=1)
@@ -140,6 +139,7 @@ class BaseModule(LightningModule):
 
         loss = self._calculate_loss(logits, y)
         self.val_loss.update(loss)
+        self.log("val/loss", loss, on_step=True, on_epoch=False, prog_bar=True)
 
         pred = torch.argmax(logits, dim=1)
         for metric in self.val_metrics.values():
@@ -170,6 +170,7 @@ class BaseModule(LightningModule):
 
         loss = self._calculate_loss(logits, y)
         self.test_loss.update(loss)
+        self.log("test/loss", loss, on_step=True, on_epoch=False)
 
         pred = torch.argmax(logits, dim=1)
         for metric in self.test_metrics.values():

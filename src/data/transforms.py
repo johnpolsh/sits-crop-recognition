@@ -42,6 +42,17 @@ class Take:
             return data.take(self.indices, axis=self.dim)
 
 
+class Transpose:
+    def __init__(self, dim0: int, dim1: int):
+        self.dims = (dim0, dim1)
+
+    def __call__(self, data: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
+        if isinstance(data, torch.Tensor):
+            return data.transpose(*self.dims)
+        else:
+            return data.transpose(self.dims)
+
+
 class Reshape:
     def __init__(self, shape: tuple[int, ...]):
         self.shape = tuple(shape)

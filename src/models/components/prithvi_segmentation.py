@@ -42,13 +42,14 @@ class PrithviSegmentation(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        _, C, H, W = x.shape
+        _, C, F, H, W = x.shape
         assert H == W == self.img_size,\
             f"Expected {H=} and {W=} to be equal to {self.img_size=}"
-        assert C == self.in_chans * self.num_frames,\
-            f"Expected {C=} to be equal to {(self.in_chans * self.num_frames)=}"
+        assert C == self.in_chans,\
+            f"Expected {C=} to be equal to {self.in_chans=}"
+        assert F == self.num_frames,\
+            f"Expected {F=} to be equal to {self.num_frames=}"
         
-        x = x.view(-1, self.in_chans, self.num_frames, H, W)
         result = self.backbone(x)
         logits = result.output
 
