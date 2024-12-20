@@ -21,7 +21,7 @@ from .transforms import (
     DType,
     FromNumpy,
     Take,
-    loose_bind_transform
+    loose_bind_transforms
 )
 
 
@@ -29,8 +29,8 @@ class PastisParams(TypedDict):
     folds: _FOLDS
     subpatch_size: int
     metadata: Optional[Union[_FOLDS, gpd.GeoDataFrame, Callable[..., gpd.GeoDataFrame]]]
-    transforms: list
-    target_transforms: list
+    transforms: Union[list, tuple]
+    target_transforms: Union[list, tuple]
     subpatching_mode: _SUBPATCHING_MODES
     hparams: dict[str, Any]
 
@@ -41,14 +41,11 @@ class PastisSubpatchedDatamodule(LightningDataModule):
         "subpatch_size": 3,
         "metadata": None,
         "subpatching_mode": "equidistant",
-        "transforms": [
-            loose_bind_transform(FromNumpy),
-            loose_bind_transform(Normalize)
-        ],
-        "target_transforms": [
-            loose_bind_transform(partial(Take, indices=0, dim=0)),
-            loose_bind_transform(FromNumpy)
-        ],
+        "transforms": loose_bind_transforms([FromNumpy, Normalize]),
+        "target_transforms": loose_bind_transforms([
+            partial(Take, indices=0, dim=0),
+            FromNumpy
+            ]),
         "hparams": {
             "batch_size": 32,
             "num_workers": 4,
@@ -62,15 +59,12 @@ class PastisSubpatchedDatamodule(LightningDataModule):
         "subpatch_size": 3,
         "metadata": None,
         "subpatching_mode": "equidistant",
-        "transforms": [
-            loose_bind_transform(FromNumpy),
-            loose_bind_transform(Normalize)
-        ],
-        "target_transforms": [
-            loose_bind_transform(partial(Take, indices=0, dim=0)),
-            loose_bind_transform(FromNumpy),
-            loose_bind_transform(partial(DType, dtype=torch.long))
-        ],
+        "transforms": loose_bind_transforms([FromNumpy, Normalize]),
+        "target_transforms": loose_bind_transforms([
+            partial(Take, indices=0, dim=0),
+            FromNumpy,
+            partial(DType, dtype=torch.long)
+            ]),
         "hparams": {
             "batch_size": 32,
             "num_workers": 4,

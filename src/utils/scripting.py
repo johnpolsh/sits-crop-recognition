@@ -39,7 +39,7 @@ def loose_bind_kwargs(warn_unused: bool = False) -> Callable:
             if warn_unused:
                 unused = set(kwargs.keys()) - set(matching.keys())
                 if unused:
-                    log.warning(f"Unused arguments: {unused}")
+                    log.warning(f"Discarded kwarg: {unused}")
             return fn(*args, **matching)
         
         return wrapper

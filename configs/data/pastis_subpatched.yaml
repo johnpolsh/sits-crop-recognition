@@ -1,33 +1,29 @@
 _target_: src.data.pastis_subpatched_datamodule.PastisSubpatchedDatamodule
 data_dir: &var_data_dir ${oc.env:PASTIS_DATA_DIR}
 train:
-  folds: &train_folds [1, 2, 3]
+  folds: &var_train_folds [1, 2, 3]
   subpatch_size: 3
   metadata:
     _target_: src.data.components.pastis.load_metadata
     _partial_: True
     data_dir: *var_data_dir
-    folds: *train_folds
+    folds: *var_train_folds
   subpatching_mode: "equidistant"
   transforms:
-    - _target_: src.data.transforms.loose_bind_transform
-      transform:
-        _target_: src.data.transforms.FromNumpy
+    _target_: src.data.transforms.loose_bind_transforms
+    transforms:
+      - _target_: src.data.transforms.FromNumpy
         _partial_: True
-    - _target_: src.data.transforms.loose_bind_transform
-      transform:
-        _target_: torchvision.transforms.Normalize
+      - _target_: torchvision.transforms.Normalize
         _partial_: True
   target_transforms:
-    - _target_: src.data.transforms.loose_bind_transform
-      transform:
-        _target_: src.data.transforms.Take
+    _target_: src.data.transforms.loose_bind_transforms
+    transforms:
+      - _target_: src.data.transforms.Take
         _partial_: True
         indices: 0
         dim: 0
-    - _target_: src.data.transforms.loose_bind_transform
-      transform:
-        _target_: src.data.transforms.FromNumpy
+      - _target_: src.data.transforms.FromNumpy
         _partial_: True
   hparams:
     batch_size: 32
@@ -36,33 +32,29 @@ train:
     shuffle: True
     persistent_workers: True
 val:
-  folds: &val_folds [4]
+  folds: &var_val_folds [4]
   subpatch_size: 3
   metadata:
     _target_: src.data.components.pastis.load_metadata
     _partial_: True
     data_dir: *var_data_dir
-    folds: *val_folds
+    folds: *var_val_folds
   subpatching_mode: "equidistant"
   transforms:
-    - _target_: src.data.transforms.loose_bind_transform
-      transform:
-        _target_: src.data.transforms.FromNumpy
+    _target_: src.data.transforms.loose_bind_transforms
+    transforms:
+      - _target_: src.data.transforms.FromNumpy
         _partial_: True
-    - _target_: src.data.transforms.loose_bind_transform
-      transform:
-        _target_: torchvision.transforms.Normalize
+      - _target_: torchvision.transforms.Normalize
         _partial_: True
   target_transforms:
-    - _target_: src.data.transforms.loose_bind_transform
-      transform:
-        _target_: src.data.transforms.Take
+    _target_: src.data.transforms.loose_bind_transforms
+    transforms:
+      - _target_: src.data.transforms.Take
         _partial_: True
         indices: 0
         dim: 0
-    - _target_: src.data.transforms.loose_bind_transform
-      transform:
-        _target_: src.data.transforms.FromNumpy
+      - _target_: src.data.transforms.FromNumpy
         _partial_: True
   hparams:
     batch_size: 32

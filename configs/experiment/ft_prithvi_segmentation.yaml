@@ -16,29 +16,26 @@ data:
   train:
     subpatch_size: *var_num_frames
     transforms:
-      - _target_: src.data.transforms.loose_bind_transform
-        transform:
-          _target_: src.data.transforms.Take
+      _target_: src.data.transforms.loose_bind_transforms
+      transforms:
+        - _target_: src.data.transforms.Take
           _partial_: True
           indices: *var_data_transform_indices
           dim: 1
-      - _target_: src.data.transforms.loose_bind_transform
-        transform:
-          _target_: src.data.transforms.Reshape
+        - _target_: src.data.transforms.Reshape
           _partial_: True
           shape: *var_data_transform_shape
+        - _target_: src.data.transforms.
   val:
     subpatch_size: *var_num_frames
     transforms:
-      - _target_: src.data.transforms.loose_bind_transform
-        transform:
-          _target_: src.data.transforms.Take
+      _target_: src.data.transforms.loose_bind_transforms
+      transforms:
+        - _target_: src.data.transforms.Take
           _partial_: True
           indices: *var_data_transform_indices
           dim: 1
-      - _target_: src.data.transforms.loose_bind_transform
-        transform:
-          _target_: src.data.transforms.Reshape
+        - _target_: src.data.transforms.Reshape
           _partial_: True
           shape: *var_data_transform_shape
 
