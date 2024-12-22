@@ -1,27 +1,17 @@
 #
 
-import torch
 import geopandas as gpd
 from functools import partial
 from lightning import LightningDataModule
 from pathlib import Path
 from torch.utils.data import DataLoader
-from torchvision.transforms import (
-    Compose,
-    Normalize
-)
+from torchvision.transforms import Compose
 from typing import Any, Callable, Optional, TypedDict, Union
 from .components.pastis import (
     _FOLDS,
-    _SUBPATCHING_MODES,
+    _SUBPATCHING_MODE,
     PASTISSubpatchedDatasetS2,
     load_data_mean_std
-)
-from .transforms import (
-    DType,
-    FromNumpy,
-    Take,
-    loose_bind_transforms
 )
 
 
@@ -31,54 +21,17 @@ class PastisParams(TypedDict):
     metadata: Optional[Union[_FOLDS, gpd.GeoDataFrame, Callable[..., gpd.GeoDataFrame]]]
     transforms: Union[list, tuple]
     target_transforms: Union[list, tuple]
-    subpatching_mode: _SUBPATCHING_MODES
+    shared_transforms: Union[list, tuple]
+    subpatching_mode: _SUBPATCHING_MODE
     hparams: dict[str, Any]
 
 
 class PastisSubpatchedDatamodule(LightningDataModule):
-    _TRAIN_DEFAULTS: PastisParams = {
-        "folds": [1, 2, 3],
-        "subpatch_size": 3,
-        "metadata": None,
-        "subpatching_mode": "equidistant",
-        "transforms": loose_bind_transforms([FromNumpy, Normalize]),
-        "target_transforms": loose_bind_transforms([
-            partial(Take, indices=0, dim=0),
-            FromNumpy
-            ]),
-        "hparams": {
-            "batch_size": 32,
-            "num_workers": 4,
-            "pin_memory": True,
-            "shuffle": True,
-            "persistent_workers": True,
-        },
-    }
-    _VAL_DEFAULTS: PastisParams = {
-        "folds": [4],
-        "subpatch_size": 3,
-        "metadata": None,
-        "subpatching_mode": "equidistant",
-        "transforms": loose_bind_transforms([FromNumpy, Normalize]),
-        "target_transforms": loose_bind_transforms([
-            partial(Take, indices=0, dim=0),
-            FromNumpy,
-            partial(DType, dtype=torch.long)
-            ]),
-        "hparams": {
-            "batch_size": 32,
-            "num_workers": 4,
-            "pin_memory": True,
-            "shuffle": False,
-            "persistent_workers": True,
-        },
-    }
-
     def __init__(
             self,
             data_dir: Union[str, Path],
-            train: Optional[PastisParams] = _TRAIN_DEFAULTS,
-            val: Optional[PastisParams] = _VAL_DEFAULTS,
+            train: Optional[PastisParams],
+            val: Optional[PastisParams],
             test: Optional[PastisParams] = None
             ):
         super().__init__()
@@ -105,10 +58,18 @@ class PastisSubpatchedDatamodule(LightningDataModule):
                 "std": self.train_norm[1],
             }
             transform = Compose([
-                transform(**kwargs) for transform in self.train["transforms"]
+                t(**kwargs) if isinstance(t, partial) else t
+                for t in self.train.get("transforms", [])
+                ] + [
+                t(**kwargs) if isinstance(t, partial) else t
+                for t in self.train.get("shared_transforms", [])
                 ])
             target_transform = Compose([
-                transform() for transform in self.train["target_transforms"]
+                t() if isinstance(t, partial) else t
+                for t in self.train.get("target_transforms", [])
+                ] + [
+                t() if isinstance(t, partial) else t
+                for t in self.train.get("shared_transforms", [])
                 ])
             
             self.train_dataset = PASTISSubpatchedDatasetS2(
@@ -127,10 +88,18 @@ class PastisSubpatchedDatamodule(LightningDataModule):
                 "std": self.val_norm[1],
             }
             transform = Compose([
-                transform(**kwargs) for transform in self.val["transforms"]
+                t(**kwargs) if isinstance(t, partial) else t
+                for t in self.val.get("transforms", [])
+                ] + [
+                t(**kwargs) if isinstance(t, partial) else t
+                for t in self.val.get("shared_transforms", [])
                 ])
             target_transform = Compose([
-                transform() for transform in self.val["target_transforms"]
+                t() if isinstance(t, partial) else t
+                for t in self.val.get("target_transforms", [])
+                ] + [
+                t() if isinstance(t, partial) else t
+                for t in self.val.get("shared_transforms", [])
                 ])
             
             self.val_dataset = PASTISSubpatchedDatasetS2(
@@ -149,10 +118,18 @@ class PastisSubpatchedDatamodule(LightningDataModule):
                 "std": self.test_norm[1],
             }
             transform = Compose([
-                transform(**kwargs) for transform in self.test["transforms"]
+                t(**kwargs) if isinstance(t, partial) else t
+                for t in self.test.get("transforms", [])
+                ] + [
+                t(**kwargs) if isinstance(t, partial) else t
+                for t in self.test.get("shared_transforms", [])
                 ])
             target_transform = Compose([
-                transform() for transform in self.test["target_transforms"]
+                t() if isinstance(t, partial) else t
+                for t in self.test.get("target_transforms", [])
+                ] + [
+                t() if isinstance(t, partial) else t
+                for t in self.test.get("shared_transforms", [])
                 ])
             
             self.test_dataset = PASTISSubpatchedDatasetS2(

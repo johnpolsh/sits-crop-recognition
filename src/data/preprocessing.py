@@ -8,7 +8,7 @@ from typing import Union
 def compute_class_weight(
         targets: torch.Tensor,
         num_classes: int,
-        clip_max: float = 10.
+        clip_max: float = 1.
         ) -> torch.Tensor:
     bins, counts = torch.unique(targets, return_counts=True)
     weights = torch.zeros(num_classes, device=targets.device)

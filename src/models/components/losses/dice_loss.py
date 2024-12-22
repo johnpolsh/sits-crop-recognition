@@ -14,7 +14,7 @@ class DiceLoss(_Loss):
             classes: Optional[list[int]] = None,
             log_loss: bool = False,
             from_logits: bool = False,
-            smooth: float = 0.,
+            label_smoothing: float = 0.,
             ignore_index: Optional[int] = None,
             eps: float = 1e-7
             ):
@@ -29,7 +29,7 @@ class DiceLoss(_Loss):
         
         self.log_loss = log_loss
         self.from_logits = from_logits
-        self.smooth = smooth
+        self.label_smoothing = label_smoothing
         self.ignore_index = ignore_index
         self.eps = eps
 
@@ -85,7 +85,7 @@ class DiceLoss(_Loss):
         scores = soft_dice_score(
             y_pred,
             y_true.type_as(y_pred),
-            smooth=self.smooth,
+            label_smoothing=self.label_smoothing,
             eps=self.eps,
             dim=(0, 2)
             )

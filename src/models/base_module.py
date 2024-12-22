@@ -19,9 +19,27 @@ _class_weight_strategy = Literal["none", "per-batch"]
 _optimizer_strategy = Literal["default", "freeze", "step-freeze", "backbone-lr"]
 
 
-def _freeze_parameters(parameters: Iterable, freeze: bool) -> None:
+def freeze_parameters(parameters: Iterable, freeze: bool) -> None:
     for param in parameters:
         param.requires_grad = not freeze
+
+
+def get_parameters(
+        module: nn.Module,
+        include_only: list[str] = [],
+        exclude: list[str] = []
+        ) -> list[nn.Parameter]:
+    if not include_only:
+        params = [
+            param for name, param in module.named_parameters()
+            if name not in exclude
+        ]
+    else:
+        params = [
+            param for name, param in module.named_parameters()
+            if name in include_only and name not in exclude
+        ]
+    return params
 
 
 class MetricParam(TypedDict):
@@ -33,6 +51,7 @@ class OptimizerStrategyParam(TypedDict):
     strategy: _optimizer_strategy
     freeze_step: Optional[int]
     backbone_lr: Optional[float]
+    end: Optional[int]
     backbone_hparams: Optional[dict[str, Any]]
     head_hparams: Optional[dict[str, Any]]
 
@@ -47,7 +66,7 @@ class BaseModule(LightningModule):
             train_metrics: list[MetricParam] = [],
             val_metrics: list[MetricParam] = [],
             test_metrics: list[MetricParam] = [],
-            on_debug_hook: Optional[_on_debug_hook] = None,
+            on_debug_train: Optional[_on_debug_hook] = None,
             on_debug_val: Optional[_on_debug_hook] = None,
             on_debug_test: Optional[_on_debug_hook] = None,
             class_weight_strategy: _class_weight_strategy = "none",
@@ -62,7 +81,7 @@ class BaseModule(LightningModule):
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.net = net
-        self.on_debug_hook = on_debug_hook
+        self.on_debug_train = on_debug_train
         self.on_debug_val = on_debug_val
         self.on_debug_test = on_debug_test
 
@@ -75,12 +94,12 @@ class BaseModule(LightningModule):
         if optimizer_strategy is not None:
             assert optimizer_strategy["strategy"] in ["default", "freeze", "step-freeze", "backbone-lr"],\
                 f"Got {optimizer_strategy['strategy']=}, expected one of ['default', 'freeze', 'step-freeze', 'backbone-lr']"
-            if optimizer_strategy["strategy"] in ["freeze", "step-freeze"]:
-                assert optimizer_strategy["freeze_step"] is not None,\
-                    f"Expected {optimizer_strategy['freeze_step']=} to be not None"
+            if optimizer_strategy["strategy"] in ["step-freeze"]:
+                assert optimizer_strategy.get("freeze_step") is not None,\
+                    f"Expected freeze_step to be not None"
             if optimizer_strategy["strategy"] in ["backbone-lr"]:
-                assert optimizer_strategy["backbone_lr"] is not None,\
-                    f"Expected {optimizer_strategy['backbone_lr']=} to be not None"
+                assert optimizer_strategy.get("backbone_lr") is not None,\
+                    f"Expected backbone_lr to be not None"
             if optimizer_strategy["strategy"] in ["freeze", "step-freeze", "backbone-lr"]:
                 assert hasattr(net, "backbone_params"),\
                     "Expected net to have backbone_params attribute"
@@ -117,7 +136,11 @@ class BaseModule(LightningModule):
             return self.criterion(logits, y)
         
         if self.class_weight_strategy in ["per-batch"]:
-            weight = compute_class_weight(y, self.net.num_classes)
+            weight = compute_class_weight(
+                y,
+                self.net.num_classes,
+                clip_max=self.net.num_classes * 1.5
+                )
             criterion = self.criterion(weight=weight)
         else:
             criterion = self.criterion()
@@ -131,21 +154,21 @@ class BaseModule(LightningModule):
         backbone_lr = self.optimizer_strategy.get("backbone_lr")
         lr = backbone_lr if backbone_lr is not None else default_lr
             
-        if self.optimizer_strategy["strategy"] == "freeze":
-            if self.optimizer_strategy["freeze_step"] is not None:
+        if self.optimizer_strategy["strategy"] in ["freeze"]:
+            if self.optimizer_strategy.get("freeze_step") is not None:
                 assert self.optimizer_strategy["freeze_step"] >= 0,\
                     f"Expected {self.optimizer_strategy['freeze_step']=} to be >= 0"
             else:
-                _freeze_parameters(self.net.backbone_params, True)
+                freeze_parameters(self.net.backbone_params, True)
 
-        if self.optimizer_strategy["strategy"] == "step-freeze":
-            assert self.optimizer_strategy["freeze_step"] is not None,\
+        if self.optimizer_strategy["strategy"] in ["step-freeze"]:
+            assert self.optimizer_strategy.get("freeze_step") is not None,\
                 f"Expected {self.optimizer_strategy['freeze_step']=} to be not None"
             assert self.optimizer_strategy["freeze_step"] > 0,\
                 f"Expected {self.optimizer_strategy['freeze_step']=} to be > 0"
         
         # NOTE: convention, could be same as step-freeze with step=0
-        if self.optimizer_strategy["strategy"] == "backbone-lr":
+        if self.optimizer_strategy["strategy"] in ["backbone-lr"]:
             assert self.optimizer_strategy["backbone_lr"] is not None,\
                 f"Expected {self.optimizer_strategy['backbone_lr']=} to be not None"
         
@@ -168,16 +191,18 @@ class BaseModule(LightningModule):
             "Expected optimizer_strategy to be not None"
         
         current_epoch = self.current_epoch + 1
-        freeze_epoch = self.optimizer_strategy.get("freeze_step")
+        freeze_epoch = self.optimizer_strategy.get("freeze_step", 0)
         if self.optimizer_strategy["strategy"] in ["freeze"]:
             if current_epoch >= freeze_epoch: # type: ignore
-                _freeze_parameters(self.net.backbone_params, True)
+                freeze_parameters(self.net.backbone_params, True)
 
         if self.optimizer_strategy["strategy"] in ["step-freeze"]:
-            if self.current_epoch % freeze_epoch == 0: # type: ignore
-                _freeze_parameters(
+            if current_epoch >= self.optimizer_strategy.get("end", 0):
+                freeze_parameters(self.net.backbone_params, True)
+            elif current_epoch % freeze_epoch == 0: # type: ignore
+                freeze_parameters(
                     self.net.backbone_params,
-                    (self.current_epoch + freeze_epoch) % (freeze_epoch * 2) == 0 # type: ignore
+                    (current_epoch + freeze_epoch) % (freeze_epoch * 2) == 0 # type: ignore
                     )
 
     def on_train_epoch_start(self):
@@ -209,8 +234,8 @@ class BaseModule(LightningModule):
         for metric in self.train_metrics.values():
             metric.update(pred, y)
 
-        if self.on_debug_hook is not None:
-            self.on_debug_hook(self, batch, batch_idx, logits)
+        if self.on_debug_train is not None:
+            self.on_debug_train(self, batch, batch_idx, logits)
 
         return loss
 
@@ -234,7 +259,7 @@ class BaseModule(LightningModule):
 
         loss = self._calculate_loss(logits, y)
         self.val_loss.update(loss)
-        self.log("val/loss", loss, on_step=True, on_epoch=False, prog_bar=True)
+        self.log("val/loss", loss, on_step=True, on_epoch=False)
 
         pred = torch.argmax(logits, dim=1)
         for metric in self.val_metrics.values():

@@ -11,7 +11,7 @@ _indices: &var_data_transform_indices [0, 1, 2, 7, 8, 9]
 _shape: &var_data_transform_shape [-1, 128, 128]
 _num_frames: &var_num_frames 3
 _num_classes: &var_num_classes 20
-_monitor_metric: &var_monitor_metric "val/iou"
+_monitor_metric: &var_monitor_metric "val/accuracy"
 
 callbacks:
   model_checkpoint:
@@ -20,59 +20,56 @@ callbacks:
   early_stopping:
     monitor: *var_monitor_metric
     mode: "max"
+    patience: 12
 
 data:
   train:
     subpatch_size: *var_num_frames
     transforms:
-      _target_: src.data.transforms.loose_bind_transforms
-      transforms:
-        - _target_: src.data.transforms.FromNumpy
+      - _target_: src.data.transforms.FromNumpy
+      - _target_: torchvision.transforms.Normalize
+        _partial_: True
+      - _target_: src.data.transforms.Transpose
+        dim0: 0
+        dim1: 1
+      - _target_: src.data.transforms.Take
+        indices: *var_data_transform_indices
+        dim: 0
+    shared_transforms:
+      - _target_: src.data.transforms.MultiStepRandomTransform
+        steps: 2
+        callback:
+          _target_: src.data.functional.vflip
           _partial_: True
-        - _target_: torchvision.transforms.Normalize
+      - _target_: src.data.transforms.MultiStepRandomTransform
+        steps: 2
+        callback:
+          _target_: src.data.functional.hflip
           _partial_: True
-        - _target_: src.data.transforms.Transpose
-          _partial_: True
-          dim0: 0
-          dim1: 1
-        - _target_: src.data.transforms.Take
-          _partial_: True
-          indices: *var_data_transform_indices
-          dim: 0
   val:
     subpatch_size: *var_num_frames
     transforms:
-      _target_: src.data.transforms.loose_bind_transforms
-      transforms:
-        - _target_: src.data.transforms.FromNumpy
-          _partial_: True
-        - _target_: torchvision.transforms.Normalize
-          _partial_: True
-        - _target_: src.data.transforms.Transpose
-          _partial_: True
-          dim0: 0
-          dim1: 1
-        - _target_: src.data.transforms.Take
-          _partial_: True
-          indices: *var_data_transform_indices
-          dim: 0
+      - _target_: src.data.transforms.FromNumpy
+      - _target_: torchvision.transforms.Normalize
+        _partial_: True
+      - _target_: src.data.transforms.Transpose
+        dim0: 0
+        dim1: 1
+      - _target_: src.data.transforms.Take
+        indices: *var_data_transform_indices
+        dim: 0
   test:
     subpatch_size: *var_num_frames
     transforms:
-      _target_: src.data.transforms.loose_bind_transforms
-      transforms:
-        - _target_: src.data.transforms.FromNumpy
-          _partial_: True
-        - _target_: torchvision.transforms.Normalize
-          _partial_: True
-        - _target_: src.data.transforms.Transpose
-          _partial_: True
-          dim0: 0
-          dim1: 1
-        - _target_: src.data.transforms.Take
-          _partial_: True
-          indices: *var_data_transform_indices
-          dim: 0
+      - _target_: src.data.transforms.FromNumpy
+      - _target_: torchvision.transforms.Normalize
+        _partial_: True
+      - _target_: src.data.transforms.Transpose
+        dim0: 0
+        dim1: 1
+      - _target_: src.data.transforms.Take
+        indices: *var_data_transform_indices
+        dim: 0
 
 model:
   net:
@@ -81,16 +78,26 @@ model:
     num_frames: *var_num_frames
   criterion:
     _target_: torch.nn.CrossEntropyLoss
+    _partial_: True
+    #_target_: src.models.components.losses.dice_loss.DiceLoss
+    #mode: multiclass
+    #ignore_index: 0
+    #from_logits: True
+    #log_loss: True
+    label_smoothing: 0.05
+  optimizer:
+    _target_: torch.optim.Adam
+    lr: 1e-4
+    weight_decay: 5e-5 # L2 regularization
   scheduler:
     _target_: torch.optim.lr_scheduler.StepLR
     _partial_: True
-    step_size: 3
+    step_size: 6
     gamma: 0.5
   class_weight_strategy: "per-batch"
   optimizer_strategy:
-    strategy: freeze
-    freeze_step: 10
-    backbone_lr: 5e-6
+    strategy: "backbone-lr"
+    backbone_lr: 1e-6
 
 trainer:
   max_epochs: 60

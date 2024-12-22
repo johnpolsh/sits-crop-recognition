@@ -53,7 +53,7 @@ def _log_segmentation_prediction(
     x = get_channels_permuted_tensor(x, [2, 1, 0])
     x = make_grid_tensor(x, pad_value=1)
     seg_module.logger.experiment.add_image(
-        f"{stage}/input",
+        f"{stage}/target",
         x,
         global_step=seg_module.current_epoch
         )
@@ -80,6 +80,7 @@ class SegmentationModule(BaseModule):
     def __init__(
             self,
             net: nn.Module,
+            on_debug_train: _on_debug_hook = _log_segmentation_prediction,
             on_debug_val: _on_debug_hook = _log_segmentation_prediction,
             on_debug_test: _on_debug_hook = _log_segmentation_prediction,
             no_default_train_metrics: bool = False,
@@ -89,6 +90,7 @@ class SegmentationModule(BaseModule):
             ):
         super().__init__(
             net=net,
+            on_debug_train=on_debug_train,
             on_debug_val=on_debug_val,
             on_debug_test=on_debug_test,
             **kwargs

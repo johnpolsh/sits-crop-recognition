@@ -1,0 +1,28 @@
+# @package _global_
+
+defaults:
+  - override /hydra/sweeper: optuna
+
+optimized_metric: "val/accuracy"
+
+hydra:
+  mode: "MULTIRUN"
+
+  sweeper:
+    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+    study_name: prithvi_segmentation
+    n_jobs: 2
+    direction: maximize
+    n_trials: 8
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 1234
+      n_startup_trials: 3
+    params:
+      model.criterion.label_smoothing: interval(0.0, 0.3)
+      model.optimizer.lr: interval(1e-6, 1e-3)
+      model.optimizer.weight_decay: interval(1e-6, 1e-3)
+      model.net.voxel_reduce: choice(max, avg, conv)
+      model.scheduler.step_size: interval(2, 15)
+      model.scheduler.gamma: interval(0.1, 0.9)
+      model.optimizer_strategy.backbone_lr: interval(1e-7, 1e-5)

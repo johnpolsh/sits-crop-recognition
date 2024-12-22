@@ -4,7 +4,6 @@ import torch
 import numpy as np
 from typing import Any, Callable, Union
 from ..utils.scripting import loose_bind_kwargs
-from .functional import vflip, hflip, random_rotation
 
 
 def loose_bind_transforms(
@@ -62,60 +61,40 @@ class Reshape:
     
 
 class MultiStepTransform:
-    def __init__(self, *callbacks: Callable, steps: int = -1):
-        self.callbacks = callbacks
-        self.steps = steps if steps > 0 else len(callbacks)
+    def __init__(self, callback: Callable, steps: int):
+        self.callback = callback
+        self.steps = steps
         self._current_step = 0
+        self._apply = False
     
     def step(self):
         self._current_step = (self._current_step + 1) % self.steps
 
-    def __call__(self, *data: Any) -> ...:
-        data = self.callbacks[self._current_step](*data)
+    @property
+    def apply(self) -> bool:
+        if self._current_step == 0:
+            self._apply = True
+        return self._apply
+
+    def __call__(self, data: Any) -> ...:
+        if self.apply:
+            data = self.callback(data)
         self.step()
         return data
 
 
-class CombinedRandomTransform(MultiStepTransform): # WANR: requires fix, does not work as intended
-    def __init__(self, *callbacks: Callable, p: float = 0.5):
-        super().__init__(*callbacks)
+class MultiStepRandomTransform(MultiStepTransform):
+    def __init__(
+            self,
+            callback: Callable,
+            steps: int,
+            p: float = 0.5
+            ):
+        super().__init__(callback, steps=steps)
         self.p = p
-        self._apply = False
     
     @property
     def apply(self) -> bool:
         if self._current_step == 0:
             self._apply = np.random.rand() < self.p
         return self._apply
-
-    def __call__(self, *data: Any) -> ...:
-        if self.apply:
-            return super().__call__(*data)
-        
-        self.step()
-        return data
-
-
-class RandomHFlip:
-    def __init__(self, p: float = 0.5):
-        self.p = p
-
-    def __call__(
-            self,
-            data: Union[np.ndarray, torch.Tensor]
-            ) -> Union[np.ndarray, torch.Tensor]:
-        if np.random.rand() < self.p:
-            return hflip(data)
-        return data
-
-class RandomVFlip:
-    def __init__(self, p: float = 0.5):
-        self.p = p
-
-    def __call__(
-            self,
-            data: Union[np.ndarray, torch.Tensor]
-            ) -> Union[np.ndarray, torch.Tensor]:
-        if np.random.rand() < self.p:
-            return vflip(data)
-        return data

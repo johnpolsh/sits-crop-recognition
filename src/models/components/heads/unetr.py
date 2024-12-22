@@ -179,9 +179,9 @@ class DeconvHeadUNetTR(nn.Module):
             out = self.bottleneck[i](inter, out)
         
         if self.voxel_reduce in ["avg"]:
-            out = torch.mean(out, dim=2)
+            out = out.mean(dim=2)
         if self.voxel_reduce in ["max"]:
-            out = torch.max(out, dim=2).values
+            out = out.max(dim=2).values
         if self.voxel_reduce in ["conv"]:
             out = self.conv_reduce(out).squeeze(2)
 

@@ -7,7 +7,7 @@ from typing import Optional, Union
 def soft_dice_score(
     output: torch.Tensor,
     target: torch.Tensor,
-    smooth: float = 0.,
+    label_smoothing: float = 0.,
     eps: float = 1e-7,
     dim: Optional[Union[int, torch.Size, list[int], tuple[int, ...]]]=None
 ) -> torch.Tensor:
@@ -21,5 +21,5 @@ def soft_dice_score(
         intersection = torch.sum(output * target)
         cardinality = torch.sum(output + target)
 
-    dice_score = (2. * intersection + smooth) / (cardinality + smooth).clamp_min(eps)
+    dice_score = (2. * intersection + label_smoothing) / (cardinality + label_smoothing).clamp_min(eps)
     return dice_score

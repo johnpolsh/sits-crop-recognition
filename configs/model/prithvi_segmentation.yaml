@@ -12,6 +12,8 @@ net:
   num_frames: 3
   num_classes: 2
   weights: "default"
+  decoder: "UNeTRDecoder"
+  voxel_reduce: "conv"
 
 criterion:
   _target_: torch.nn.CrossEntropyLoss

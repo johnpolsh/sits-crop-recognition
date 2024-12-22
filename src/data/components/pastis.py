@@ -17,7 +17,7 @@ _PROPS = {
     "folds": [1, 2, 3, 4, 5]
 }
 _FOLDS = list[Literal[1, 2, 3, 4, 5]]
-_SUBPATCHING_MODES = Literal["sequential", "stride", "equidistant", "random"]
+_SUBPATCHING_MODE = Literal["sequential", "stride", "equidistant", "random"]
 
 
 def _get_npy_file_header(file_path: Union[str, Path]) -> tuple:
@@ -141,7 +141,7 @@ class PASTISSubpatchedDatasetS2(PASTISDatasetS2):
             data_dir: Union[str, Path],
             subpatch_size: int,
             metadata: Union[_FOLDS, gpd.GeoDataFrame, Callable[[Union[str, Path]], gpd.GeoDataFrame]] = load_metadata,
-            subpatching_mode: _SUBPATCHING_MODES = "equidistant",
+            subpatching_mode: _SUBPATCHING_MODE = "equidistant",
             transform: Optional[Callable[[np.ndarray], Any]] = None,
             target_transform: Optional[Callable[[np.ndarray], Any]] = None,
             class_mapping: Optional[dict] = None

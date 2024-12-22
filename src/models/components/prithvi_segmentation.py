@@ -9,6 +9,7 @@ from terratorch.models.backbones.prithvi_vit import (
 from torch import nn
 from typing import Literal, Optional, Union
 from .heads.unetr import DeconvHeadUNetTR
+from ..base_module import get_parameters
 
 
 _decoder_variants = Literal["FCNDecoder", "UNeTRDecoder"]
@@ -59,7 +60,7 @@ class PrithviSegmentation(nn.Module):
 
         encoder_kwargs = {
             "bands": bands,
-            "weights": weights in ["default"],
+            "pretrained": weights in ["default"],
             "img_size": img_size,
             "in_chans": in_chans,
             "num_frames": num_frames,
@@ -67,7 +68,7 @@ class PrithviSegmentation(nn.Module):
         }
 
         if decoder in ["UNeTRDecoder"]:
-            encoder_kwargs["out_indices"] = (2, 5, 8, 11)
+            encoder_kwargs["out_indices"] = (0, 3, 7, 11)
         self.backbone = prithvi_vit_100(**encoder_kwargs)
 
         decoder_kwargs = {
@@ -79,6 +80,9 @@ class PrithviSegmentation(nn.Module):
             decoder_kwargs["grid_size"] = self.backbone.patch_embed.grid_size
             decoder_kwargs["voxel_reduce"] = kwargs.get("voxel_reduce", "conv")
         self.head = _get_segmentation_head(**decoder_kwargs)
+
+        self.backbone_params = get_parameters(self.backbone)
+        self.head_params = get_parameters(self.head)
         
     def forward_backbone(self, x: torch.Tensor) -> torch.Tensor:
         return self.backbone(x)
