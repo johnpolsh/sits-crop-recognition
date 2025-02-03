@@ -5,7 +5,8 @@ defaults:
   - /model: prithvi_segmentation
   - override /plugins: mixed_precision
 
-tags: ["finetunning", "prithvi_segmentation"]
+experiment_name: &val_experiment_name "finetuning-prithvi-segmentation"
+tags: &val_tags ["prithvi-segmentation", "finetunning"]
 
 _indices: &var_data_transform_indices [0, 1, 2, 7, 8, 9]
 _shape: &var_data_transform_shape [-1, 128, 128]
@@ -20,7 +21,12 @@ callbacks:
   early_stopping:
     monitor: *var_monitor_metric
     mode: "max"
-    patience: 12
+    patience: 60
+
+logger:
+  mlflow:
+    experiment_name: *val_experiment_name
+    tags: [*val_tags]
 
 data:
   train:
@@ -76,6 +82,8 @@ model:
     img_size: 128
     num_classes: *var_num_classes
     num_frames: *var_num_frames
+    decoder: "UTRSegDecoder"
+    weights: "none"
   criterion:
     _target_: torch.nn.CrossEntropyLoss
     _partial_: True
@@ -84,11 +92,11 @@ model:
     #ignore_index: 0
     #from_logits: True
     #log_loss: True
-    label_smoothing: 0.05
+    #label_smoothing: 0.1
   optimizer:
     _target_: torch.optim.Adam
-    lr: 1e-4
-    weight_decay: 5e-5 # L2 regularization
+    lr: 5e-4
+    #weight_decay: 1e-5 # L2 regularization
   scheduler:
     _target_: torch.optim.lr_scheduler.StepLR
     _partial_: True
@@ -98,8 +106,9 @@ model:
   optimizer_strategy:
     strategy: "backbone-lr"
     backbone_lr: 1e-6
+    end: 30
 
 trainer:
-  max_epochs: 60
+  max_epochs: 200
   gradient_clip_val: 0.1
     

@@ -19,7 +19,7 @@ train:
       dim: 0
     - _target_: src.data.transforms.FromNumpy
   hparams:
-    batch_size: 32
+    batch_size: 64
     num_workers: 4
     pin_memory: True
     shuffle: True
@@ -43,7 +43,7 @@ val:
       dim: 0
     - _target_: src.data.transforms.FromNumpy
   hparams:
-    batch_size: 32
+    batch_size: 64
     num_workers: 4
     pin_memory: True
     shuffle: False
@@ -67,7 +67,7 @@ test:
       dim: 0
     - _target_: src.data.transforms.FromNumpy
   hparams:
-    batch_size: 32
+    batch_size: 64
     num_workers: 4
     pin_memory: True
     shuffle: False

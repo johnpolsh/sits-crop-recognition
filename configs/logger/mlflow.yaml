@@ -6,7 +6,7 @@ mlflow:
   # run_name: ""
   tracking_uri: ${paths.log_dir}/mlflow/mlruns # run `mlflow ui` command inside the `logs/mlflow/` dir to open the UI
   tags: null
-  # save_dir: "./mlruns"
+  save_dir: ${paths.log_dir}/mlflow/mlruns
   prefix: ""
-  artifact_location: null
+  artifact_location: artifacts
   # run_id: ""

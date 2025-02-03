@@ -1,13 +1,17 @@
 #
 
 import torch
+import numpy as np
 from lightning import LightningModule
+from lightning.pytorch import loggers
+from lightning.pytorch.trainer.states import RunningStage
 from pathlib import Path
 from torch import nn, optim
 from torch.nn.modules.loss import _Loss
 from torchmetrics import MeanMetric
 from typing import Any, Callable, Iterable, Literal, Optional, TypedDict, Union
 from ..data.preprocessing import compute_class_weight
+from ..utils.plotting import img_tensor_to_numpy
 from ..utils.scripting import extract_default_args
 
 
@@ -17,6 +21,20 @@ _scheduler = Optional[Callable[..., optim.lr_scheduler._LRScheduler]]
 _on_debug_hook = Callable[[Any, Any, int, torch.Tensor], None]
 _class_weight_strategy = Literal["none", "per-batch"]
 _optimizer_strategy = Literal["default", "freeze", "step-freeze", "backbone-lr"]
+
+
+def _get_stage_name(stage: Optional[RunningStage]) -> str:
+    if stage == RunningStage.TRAINING:
+        return "train"
+    if stage == RunningStage.SANITY_CHECKING:
+        return "sanity_check"
+    if stage == RunningStage.VALIDATING:
+        return "val"
+    if stage == RunningStage.TESTING:
+        return "test"
+    if stage == RunningStage.PREDICTING:
+        return "predict"
+    return "unknown"
 
 
 def freeze_parameters(parameters: Iterable, freeze: bool) -> None:
@@ -42,9 +60,41 @@ def get_parameters(
     return params
 
 
-class MetricParam(TypedDict):
-    alias: Optional[str]
-    metric: Callable[..., nn.Module]
+def log_experiment_image(
+        module: LightningModule,
+        img: Union[np.ndarray, torch.Tensor],
+        name: str,
+        stage: Optional[RunningStage] = None,
+        global_step: Optional[int] = None
+        ):
+    stage_name = _get_stage_name(stage or module.trainer.state.stage)
+
+    logger = module.logger
+    if logger is None:
+        return
+
+    global_step = global_step or module.current_epoch
+    if isinstance(logger, loggers.TensorBoardLogger):
+        logger.experiment.add_image(
+            f"{stage_name}/{name}",
+            img,
+            global_step=global_step
+            )
+    if isinstance(logger, loggers.MLFlowLogger):
+        if isinstance(img, torch.Tensor):
+            img_np = img_tensor_to_numpy(img)
+        else:
+            img_np = img
+        assert img_np.ndim in [2, 3],\
+            f"Expected image to be 2D or 3D, got {img_np.ndim}"
+        
+        run_id = logger.run_id
+        logger.experiment.log_image( # BUG: mlflow is not loading image paths correctly, URI format is being buggy
+            run_id=run_id,
+            image=img_np,
+            key=f"{stage_name}-{name}",
+            step=global_step
+            )
 
 
 class OptimizerStrategyParam(TypedDict):
@@ -63,9 +113,6 @@ class BaseModule(LightningModule):
             criterion: _criterion = nn.CrossEntropyLoss(),
             optimizer: _optimizer = optim.Adam,
             scheduler: _scheduler = None,
-            train_metrics: list[MetricParam] = [],
-            val_metrics: list[MetricParam] = [],
-            test_metrics: list[MetricParam] = [],
             on_debug_train: Optional[_on_debug_hook] = None,
             on_debug_val: Optional[_on_debug_hook] = None,
             on_debug_test: Optional[_on_debug_hook] = None,
@@ -110,22 +157,13 @@ class BaseModule(LightningModule):
         self.save_hyperparameters(ignore=ignore_hyparams)
 
         self.train_loss = MeanMetric()
-        self.train_metrics = nn.ModuleDict({
-            (param["alias"] or param["metric"].__name__): param["metric"]()
-            for param in train_metrics
-        })
+        self.train_metrics = nn.ModuleDict()
 
         self.val_loss = MeanMetric()
-        self.val_metrics = nn.ModuleDict({
-            (param["alias"] or param["metric"].__name__): param["metric"]()
-            for param in val_metrics
-        })
+        self.val_metrics = nn.ModuleDict()
 
         self.test_loss = MeanMetric()
-        self.test_metrics = nn.ModuleDict({
-            (param["alias"] or param["metric"].__name__): param["metric"]()
-            for param in test_metrics
-        })
+        self.test_metrics = nn.ModuleDict()
 
     def _calculate_loss(
             self,
@@ -136,11 +174,7 @@ class BaseModule(LightningModule):
             return self.criterion(logits, y)
         
         if self.class_weight_strategy in ["per-batch"]:
-            weight = compute_class_weight(
-                y,
-                self.net.num_classes,
-                clip_max=self.net.num_classes * 1.5
-                )
+            weight = compute_class_weight(y, self.net.num_classes)
             criterion = self.criterion(weight=weight)
         else:
             criterion = self.criterion()
@@ -155,14 +189,16 @@ class BaseModule(LightningModule):
         lr = backbone_lr if backbone_lr is not None else default_lr
             
         if self.optimizer_strategy["strategy"] in ["freeze"]:
-            if self.optimizer_strategy.get("freeze_step") is not None:
+            if "freeze_step" in self.optimizer_strategy and self.optimizer_strategy["freeze_step"] is not None:
                 assert self.optimizer_strategy["freeze_step"] >= 0,\
-                    f"Expected {self.optimizer_strategy['freeze_step']=} to be >= 0"
+                    f"Expected {self.optimizer_strategy['freeze_step']=} to be >= 0" # type: ignore
             else:
                 freeze_parameters(self.net.backbone_params, True)
 
         if self.optimizer_strategy["strategy"] in ["step-freeze"]:
-            assert self.optimizer_strategy.get("freeze_step") is not None,\
+            assert "freeze_step" in self.optimizer_strategy,\
+                f"Expected self.optimizer_strategy to have 'freeze_step' key"
+            assert self.optimizer_strategy["freeze_step"] is not None,\
                 f"Expected {self.optimizer_strategy['freeze_step']=} to be not None"
             assert self.optimizer_strategy["freeze_step"] > 0,\
                 f"Expected {self.optimizer_strategy['freeze_step']=} to be > 0"
@@ -197,13 +233,17 @@ class BaseModule(LightningModule):
                 freeze_parameters(self.net.backbone_params, True)
 
         if self.optimizer_strategy["strategy"] in ["step-freeze"]:
-            if current_epoch >= self.optimizer_strategy.get("end", 0):
+            if current_epoch >= self.optimizer_strategy.get("end", 0): # type: ignore
                 freeze_parameters(self.net.backbone_params, True)
             elif current_epoch % freeze_epoch == 0: # type: ignore
                 freeze_parameters(
                     self.net.backbone_params,
                     (current_epoch + freeze_epoch) % (freeze_epoch * 2) == 0 # type: ignore
                     )
+        
+        if self.optimizer_strategy["strategy"] in ["backbone-lr"]:
+            if current_epoch >= self.optimizer_strategy.get("end", 0): # type: ignore
+                freeze_parameters(self.net.backbone_params, True)
 
     def on_train_epoch_start(self):
         self.train_loss.reset()
@@ -315,7 +355,8 @@ class BaseModule(LightningModule):
                 "scheduler": self.scheduler(optimizer),
                 "interval": "epoch",
                 "frequency": 1,
-                "strict": True
+                "strict": True,
+                "monitor": "val/accuracy"
             }
             scheduler.append(config)
         
