@@ -1,5 +1,5 @@
 mixed_precision:
   _target_: lightning.pytorch.plugins.MixedPrecision
-  precision: 16-mixed
-  device: cuda
+  precision: "16-mixed"
+  device: "cuda"
   scaler: null

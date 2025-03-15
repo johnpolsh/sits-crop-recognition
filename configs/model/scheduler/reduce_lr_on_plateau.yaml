@@ -1,0 +1,9 @@
+_target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+_partial_: true
+mode: "max"
+factor: 0.5
+patience: 10
+threshold_mode: "rel"
+cooldown: 0
+min_lr: 0.0
+eps: 1e-8

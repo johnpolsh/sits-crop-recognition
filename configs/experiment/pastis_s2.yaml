@@ -1,0 +1,21 @@
+# @package _global_
+
+defaults:
+  - override /data: pastis_subpatched.yaml
+  - override /trainer: gpu.yaml
+
+experiment_name: "pastis_s2"
+tags:
+  dataset: "pastis_subpatched"
+
+model:
+  net:
+    img_size: 128
+    in_channels: 40
+    num_classes: 19
+    patch_size: 2
+  criterion:
+    ignore_index: 19
+
+trainer:
+  max_epochs: 60

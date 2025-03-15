@@ -2,22 +2,27 @@
 
 import torch
 import numpy as np
-from typing import Any, Callable, Union
+from typing import Any, Callable, Optional, Union
+from .functional import (
+    Transformable,
+    hflip,
+    rotate90,
+    vflip
+    )
 from ..utils.scripting import loose_bind_kwargs
 
 
-def loose_bind_transforms(
-        transforms: list[Callable]
-        ) -> list[Callable]:
-    return [loose_bind_kwargs()(t) for t in transforms]
+class ToTensor:
+    @loose_bind_kwargs()
+    def __init__(self):
+        pass
 
-
-class FromNumpy:
     def __call__(self, data: np.ndarray) -> torch.Tensor:
         return torch.from_numpy(data)
 
-
+# TODO
 class DType:
+    @loose_bind_kwargs()
     def __init__(self, dtype: torch.dtype):
         self.dtype = dtype
 
@@ -25,7 +30,8 @@ class DType:
         return data.to(self.dtype)
     
 
-class Take:
+class TakeIndices:
+    @loose_bind_kwargs()
     def __init__(
             self,
             indices: Union[int, list[int]],
@@ -34,7 +40,7 @@ class Take:
         self.indices = tuple(indices) if isinstance(indices, list) else indices
         self.dim = dim
 
-    def __call__(self, data: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
+    def __call__(self, data: Transformable) -> Transformable:
         if isinstance(data, torch.Tensor):
             return data.index_select(self.dim, torch.tensor(self.indices))
         else:
@@ -42,10 +48,11 @@ class Take:
 
 
 class Transpose:
+    @loose_bind_kwargs()
     def __init__(self, dim0: int, dim1: int):
         self.dims = (dim0, dim1)
 
-    def __call__(self, data: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
+    def __call__(self, data: Transformable) -> Transformable:
         if isinstance(data, torch.Tensor):
             return data.transpose(*self.dims)
         else:
@@ -53,48 +60,65 @@ class Transpose:
 
 
 class Reshape:
+    @loose_bind_kwargs()
     def __init__(self, shape: tuple[int, ...]):
         self.shape = tuple(shape)
 
-    def __call__(self, data: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
+    def __call__(self, data: Transformable) -> Transformable:
         return data.reshape(self.shape)
     
 
-class MultiStepTransform:
-    def __init__(self, callback: Callable, steps: int):
-        self.callback = callback
-        self.steps = steps
-        self._current_step = 0
-        self._apply = False
+class MultidataTransform:
+    @loose_bind_kwargs()
+    def __init__(self, transform: Optional[Callable] = None):
+        self.transform = transform
+        pass
+
+    def __call__(self, data: tuple[Any, ...]) -> tuple[Any, ...]:
+        return tuple(self.transform(d) for d in data) if self.transform is not None else data
+
+
+class SelectiveMultidataTransform(MultidataTransform):
+    @loose_bind_kwargs()
+    def __init__(self, transform: Callable, indices: Union[int, list[int]]):
+        super().__init__(transform)
+        self.indices = [indices] if isinstance(indices, int) else indices
     
-    def step(self):
-        self._current_step = (self._current_step + 1) % self.steps
+    def __call__(self, data: tuple[Any, ...]) -> tuple[Any, ...]:
+        return tuple(
+            self.transform(data[i]) if i in self.indices else data[i] for i in range(len(data)) # type: ignore
+            )
 
-    @property
-    def apply(self) -> bool:
-        if self._current_step == 0:
-            self._apply = True
-        return self._apply
 
-    def __call__(self, data: Any) -> ...:
-        if self.apply:
-            data = self.callback(data)
-        self.step()
+class RandomKRotation(MultidataTransform):
+    @loose_bind_kwargs()
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, data: tuple[Transformable, ...]) -> tuple[Transformable, ...]:
+        k = np.random.randint(4)
+        return tuple(rotate90(d, k) for d in data)
+
+
+class RandomHFlip(MultidataTransform):
+    @loose_bind_kwargs()
+    def __init__(self, p: float = 0.5):
+        super().__init__()
+        self.p = p
+
+    def __call__(self, data: tuple[Transformable, ...]) -> tuple[Transformable, ...]:
+        if np.random.rand() > self.p:
+            return tuple(hflip(d) for d in data)
         return data
 
 
-class MultiStepRandomTransform(MultiStepTransform):
-    def __init__(
-            self,
-            callback: Callable,
-            steps: int,
-            p: float = 0.5
-            ):
-        super().__init__(callback, steps=steps)
+class RandomVFlip(MultidataTransform):
+    @loose_bind_kwargs()
+    def __init__(self, p: float = 0.5):
+        super().__init__()
         self.p = p
-    
-    @property
-    def apply(self) -> bool:
-        if self._current_step == 0:
-            self._apply = np.random.rand() < self.p
-        return self._apply
+
+    def __call__(self, data: tuple[Transformable, ...]) -> tuple[Transformable, ...]:
+        if np.random.rand() > self.p:
+            return tuple(vflip(d) for d in data)
+        return data

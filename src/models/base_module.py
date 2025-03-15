@@ -1,100 +1,38 @@
 #
 
 import torch
-import numpy as np
 from lightning import LightningModule
-from lightning.pytorch import loggers
-from lightning.pytorch.trainer.states import RunningStage
 from pathlib import Path
 from torch import nn, optim
 from torch.nn.modules.loss import _Loss
 from torchmetrics import MeanMetric
-from typing import Any, Callable, Iterable, Literal, Optional, TypedDict, Union
-from ..data.preprocessing import compute_class_weight
-from ..utils.plotting import img_tensor_to_numpy
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    Literal,
+    Optional,
+    TypedDict,
+    Union
+)
 from ..utils.scripting import extract_default_args
 
-
-_criterion = Union[_Loss, Callable[..., _Loss]]
-_optimizer = Callable[..., optim.Optimizer]
-_scheduler = Optional[Callable[..., optim.lr_scheduler._LRScheduler]]
-_on_debug_hook = Callable[[Any, Any, int, torch.Tensor], None]
-_class_weight_strategy = Literal["none", "per-batch"]
-_optimizer_strategy = Literal["default", "freeze", "step-freeze", "backbone-lr"]
-
-
-def _get_stage_name(stage: Optional[RunningStage]) -> str:
-    if stage == RunningStage.TRAINING:
-        return "train"
-    if stage == RunningStage.SANITY_CHECKING:
-        return "sanity_check"
-    if stage == RunningStage.VALIDATING:
-        return "val"
-    if stage == RunningStage.TESTING:
-        return "test"
-    if stage == RunningStage.PREDICTING:
-        return "predict"
-    return "unknown"
-
-
 def freeze_parameters(parameters: Iterable, freeze: bool) -> None:
+    """
+    Freezes or unfreezes parameters by setting requires_grad to `not freeze`.
+
+    Args:
+        parameters (Iterable): An iterable of parameters (e.g., model parameters) to be frozen or unfrozen.
+        freeze (bool): If True, sets requires_grad to False, freezing the parameters. If False, sets requires_grad to True, unfreezing the parameters.
+    """
     for param in parameters:
         param.requires_grad = not freeze
 
 
-def get_parameters(
-        module: nn.Module,
-        include_only: list[str] = [],
-        exclude: list[str] = []
-        ) -> list[nn.Parameter]:
-    if not include_only:
-        params = [
-            param for name, param in module.named_parameters()
-            if name not in exclude
-        ]
-    else:
-        params = [
-            param for name, param in module.named_parameters()
-            if name in include_only and name not in exclude
-        ]
-    return params
-
-
-def log_experiment_image(
-        module: LightningModule,
-        img: Union[np.ndarray, torch.Tensor],
-        name: str,
-        stage: Optional[RunningStage] = None,
-        global_step: Optional[int] = None
-        ):
-    stage_name = _get_stage_name(stage or module.trainer.state.stage)
-
-    logger = module.logger
-    if logger is None:
-        return
-
-    global_step = global_step or module.current_epoch
-    if isinstance(logger, loggers.TensorBoardLogger):
-        logger.experiment.add_image(
-            f"{stage_name}/{name}",
-            img,
-            global_step=global_step
-            )
-    if isinstance(logger, loggers.MLFlowLogger):
-        if isinstance(img, torch.Tensor):
-            img_np = img_tensor_to_numpy(img)
-        else:
-            img_np = img
-        assert img_np.ndim in [2, 3],\
-            f"Expected image to be 2D or 3D, got {img_np.ndim}"
-        
-        run_id = logger.run_id
-        logger.experiment.log_image( # BUG: mlflow is not loading image paths correctly, URI format is being buggy
-            run_id=run_id,
-            image=img_np,
-            key=f"{stage_name}-{name}",
-            step=global_step
-            )
+_criterion = Union[_Loss, Callable[..., _Loss]]
+_optimizer = Callable[..., optim.Optimizer]
+_scheduler = Callable[..., optim.lr_scheduler._LRScheduler]
+_optimizer_strategy = Literal["default", "freeze", "step-freeze", "backbone-lr"]
 
 
 class OptimizerStrategyParam(TypedDict):
@@ -112,31 +50,33 @@ class BaseModule(LightningModule):
             net: nn.Module,
             criterion: _criterion = nn.CrossEntropyLoss(),
             optimizer: _optimizer = optim.Adam,
-            scheduler: _scheduler = None,
-            on_debug_train: Optional[_on_debug_hook] = None,
-            on_debug_val: Optional[_on_debug_hook] = None,
-            on_debug_test: Optional[_on_debug_hook] = None,
-            class_weight_strategy: _class_weight_strategy = "none",
+            scheduler: Optional[_scheduler] = None,
+            optimized_metric: str = "val/loss",
             optimizer_strategy: Optional[OptimizerStrategyParam] = None,
             ignore_hyparams: list[str] = ["net", "criterion"]
             ):
-        assert class_weight_strategy in ["none", "per-batch"],\
-            f"Got {class_weight_strategy=}, expected one of ['none', 'per-batch']"
-
         super().__init__()
-        self.criterion = criterion
-        self.optimizer = optimizer
-        self.scheduler = scheduler
-        self.net = net
-        self.on_debug_train = on_debug_train
-        self.on_debug_val = on_debug_val
-        self.on_debug_test = on_debug_test
+        self.save_hyperparameters(logger=False, ignore=ignore_hyparams)
 
+        # https://arxiv.org/abs/1904.06376
         torch.set_float32_matmul_precision("medium")
 
         assert hasattr(net, "num_classes"),\
-            "Expected net to have num_classes attribute"
-        self.class_weight_strategy = class_weight_strategy
+            "Expected net to have `num_classes` attribute"
+
+        if net.example_input_array is None:
+            assert hasattr(net, "in_channels"),\
+                "Expected net to have `in_channels` attribute"
+            assert hasattr(net, "img_size"),\
+                "Expected net to have `img_size` attribute"
+            
+            net.example_input_array = torch.randn(
+                1,
+                net.in_channels,
+                net.img_size,
+                net.img_size
+                )
+        self.example_input_array = net.example_input_array
 
         if optimizer_strategy is not None:
             assert optimizer_strategy["strategy"] in ["default", "freeze", "step-freeze", "backbone-lr"],\
@@ -153,8 +93,11 @@ class BaseModule(LightningModule):
                 assert hasattr(net, "head_params"),\
                     "Expected net to have head_params attribute"
         self.optimizer_strategy = optimizer_strategy
-
-        self.save_hyperparameters(ignore=ignore_hyparams)
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+        self.net = net
+        self.optimized_metric = optimized_metric
 
         self.train_loss = MeanMetric()
         self.train_metrics = nn.ModuleDict()
@@ -165,7 +108,7 @@ class BaseModule(LightningModule):
         self.test_loss = MeanMetric()
         self.test_metrics = nn.ModuleDict()
 
-    def _calculate_loss(
+    def _compute_loss(
             self,
             logits: torch.Tensor,
             y: torch.Tensor
@@ -173,12 +116,7 @@ class BaseModule(LightningModule):
         if isinstance(self.criterion, nn.Module):
             return self.criterion(logits, y)
         
-        if self.class_weight_strategy in ["per-batch"]:
-            weight = compute_class_weight(y, self.net.num_classes)
-            criterion = self.criterion(weight=weight)
-        else:
-            criterion = self.criterion()
-            
+        criterion = self.criterion()
         return criterion(logits, y)
     
     def _configure_optimizer_strategy(self, default_lr: float) -> optim.Optimizer:
@@ -245,6 +183,9 @@ class BaseModule(LightningModule):
             if current_epoch >= self.optimizer_strategy.get("end", 0): # type: ignore
                 freeze_parameters(self.net.backbone_params, True)
 
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
     def on_train_epoch_start(self):
         self.train_loss.reset()
         for metric in self.train_metrics.values():
@@ -253,93 +194,133 @@ class BaseModule(LightningModule):
         if self.optimizer_strategy is not None:
             self._update_optimizer_strategy_state()
 
-    def on_train_epoch_end(self):
-        self.log("train/loss", self.train_loss.compute(), prog_bar=True)
-        for name, metric in self.train_metrics.items():
-            self.log(f"train/{name}", metric.compute(), prog_bar=True)
+    def training_step(self, batch: Any, batch_idx: int):
+        results = self.step(batch)
+        loss = results["loss"]
+        logits = results["logits"]
+        target = results["target"]
 
-    def training_step(
-            self,
-            batch: tuple[torch.Tensor, torch.Tensor],
-            batch_idx: int
-            ):
-        x, y = batch
-        logits = self.forward(x)
-
-        loss = self._calculate_loss(logits, y)
         self.train_loss.update(loss)
-        self.log("train/loss", loss, on_step=True, on_epoch=False, prog_bar=True)
+        self.log(
+            "train/loss",
+            loss,
+            on_step=True,
+            on_epoch=False,
+            logger=False,
+            prog_bar=True
+            )
 
-        pred = torch.argmax(logits, dim=1)
         for metric in self.train_metrics.values():
-            metric.update(pred, y)
+            metric.update(logits, target)
 
-        if self.on_debug_train is not None:
-            self.on_debug_train(self, batch, batch_idx, logits)
+        return results
 
-        return loss
+    def on_train_epoch_end(self):
+        self.log(
+            "train/loss",
+            self.train_loss.compute(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True
+            )
+        for name, metric in self.train_metrics.items():
+            self.log(
+                f"train/{name}",
+                metric.compute(),
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True
+                )
 
     def on_validation_epoch_start(self):
         self.val_loss.reset()
         for metric in self.val_metrics.values():
             metric.reset()
 
-    def on_validation_epoch_end(self):
-        self.log("val/loss", self.val_loss.compute(), prog_bar=True)
-        for name, metric in self.val_metrics.items():
-            self.log(f"val/{name}", metric.compute(), prog_bar=True)
+    def validation_step(self, batch: Any, batch_idx: int):
+        results = self.step(batch)
+        loss = results["loss"]
+        logits = results["logits"]
+        target = results["target"]
 
-    def validation_step(
-            self,
-            batch: tuple[torch.Tensor, torch.Tensor],
-            batch_idx: int
-            ):
-        x, y = batch
-        logits = self.forward(x)
-
-        loss = self._calculate_loss(logits, y)
         self.val_loss.update(loss)
-        self.log("val/loss", loss, on_step=True, on_epoch=False)
+        self.log(
+            "val/loss",
+            loss,
+            on_step=True,
+            on_epoch=False,
+            logger=False,
+            prog_bar=True
+            )
 
-        pred = torch.argmax(logits, dim=1)
         for metric in self.val_metrics.values():
-            metric.update(pred, y)
+            metric.update(logits, target)
 
-        if self.on_debug_val is not None:
-            self.on_debug_val(self, batch, batch_idx, logits)
-    
-        return loss
+        return results
+
+    def on_validation_epoch_end(self):
+        self.log(
+            "val/loss",
+            self.val_loss.compute(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True
+            )
+        for name, metric in self.val_metrics.items():
+            self.log(
+                f"val/{name}",
+                metric.compute(),
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True
+                )
 
     def on_test_epoch_start(self):
         self.test_loss.reset()
         for metric in self.test_metrics.values():
             metric.reset()
 
-    def on_test_epoch_end(self):
-        self.log("test/loss", self.test_loss.compute())
-        for name, metric in self.test_metrics.items():
-            self.log(f"test/{name}", metric.compute())
-
     def test_step(
             self,
             batch: tuple[torch.Tensor, torch.Tensor],
             batch_idx: int
             ):
-        x, y = batch
-        logits = self.forward(x)
+        results = self.step(batch)
+        loss = results["loss"]
+        logits = results["logits"]
+        target = results["target"]
 
-        loss = self._calculate_loss(logits, y)
         self.test_loss.update(loss)
-        self.log("test/loss", loss, on_step=True, on_epoch=False)
+        self.log(
+            "test/loss",
+            loss,
+            on_step=True,
+            on_epoch=False,
+            logger=False,
+            prog_bar=True
+            )
 
-        pred = torch.argmax(logits, dim=1)
         for metric in self.test_metrics.values():
-            metric.update(pred, y)
+            metric.update(logits, target)
 
-        if self.on_debug_test is not None:
-            self.on_debug_test(self, batch, batch_idx, logits)
-        
-        return loss
+        return results
+
+    def on_test_epoch_end(self):
+        self.log(
+            "test/loss",
+            self.test_loss.compute(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True
+            )
+        for name, metric in self.test_metrics.items():
+            self.log(
+                f"test/{name}",
+                metric.compute(),
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True
+                )
 
     def configure_optimizers(self):
         if self.optimizer_strategy is not None:
@@ -356,14 +337,9 @@ class BaseModule(LightningModule):
                 "interval": "epoch",
                 "frequency": 1,
                 "strict": True,
-                "monitor": "val/accuracy"
+                "monitor": self.optimized_metric,
+                "name": "lr_scheduler",
             }
             scheduler.append(config)
         
         return [optimizer], scheduler
-    
-    def export_onnx(self, filename: Union[str, Path]):
-        assert hasattr(self, "example_input_array"),\
-            "Exporting to ONNX requires 'example_input_array' attribute"
-        
-        ... # TODO

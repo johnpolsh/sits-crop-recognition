@@ -1,0 +1,5 @@
+defaults:
+  - _self_
+
+_target_: src.data.segmentation_datamodule.SegmentationDataModule
+_convert_: all

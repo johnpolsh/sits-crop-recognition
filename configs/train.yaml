@@ -4,13 +4,15 @@
 # order of defaults determines the order in which configs override each other
 defaults:
   - _self_
-  - callbacks: default
+  - callbacks: default.yaml
+  - data: null
+  - model: null
   - logger: null # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
-  - plugins: default
-  - trainer: default
-  - paths: default
-  - extras: default
-  - hydra: default
+  - plugins: default.yaml
+  - trainer: default.yaml
+  - paths: default.yaml
+  - extras: default.yaml
+  - hydra: default.yaml
 
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
@@ -21,10 +23,18 @@ defaults:
 
   # optional local config for machine/user specific settings
   # it's optional since it doesn't need to exist and is excluded from version control
-  - optional local: default
+  - optional local: default.yaml
 
   # debugging config (enable through command line, e.g. `python train.py debug=default)
   - debug: null
+
+# set the experiment name and description
+# these can be used in the logger and checkpoint callback
+experiment_name: null
+
+# set the experiment description
+# this can be used in the logger and checkpoint callback
+experiment_description: "A simple template to train a model with PyTorch Lightning"
 
 # task name, determines output directory path
 task_name: "train"
@@ -32,14 +42,23 @@ task_name: "train"
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-tags: ["dev"]
+tags:
+  mode: "dev"
+  stage: ${task_name}
+  dataset: null
+  model: ${model.net._target_}
+  description: null # not the same as experiment_description, this is relative to the run
+  version: "0.1"
+
+# set optimized metric for model checkpointing
+optimized_metric: "val/acc"
 
 # set False to skip model training
-train: True
+train: true
 
 # evaluate on test set, using best model weights achieved during training
 # lightning chooses best weights based on the metric specified in checkpoint callback
-test: True
+test: true
 
 # simply provide checkpoint path to resume training
 ckpt_path: null

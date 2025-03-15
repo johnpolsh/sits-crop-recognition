@@ -1,0 +1,7 @@
+# do not use if hydra mode is MULTIRUN
+
+log_batch_images:
+  _target_: src.lightning.callbacks.LogBatchImages
+  mode: "figure"
+  num_samples: 10
+  handler: null

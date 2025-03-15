@@ -2,7 +2,7 @@
 
 import torch
 from torch.utils.data import Dataset
-from typing import Optional, Union
+from typing import Union
 
 
 def normalize(
@@ -14,7 +14,6 @@ def normalize(
         keep_mask = tensor != 0.
     else:
         keep_mask = torch.ones_like(tensor, dtype=torch.bool)
-    print(keep_mask)
     mx = tensor[keep_mask].max()
     mn = tensor[keep_mask].min()
     tensor[keep_mask] = (tensor[keep_mask] - mn) / (mx - mn + eps)

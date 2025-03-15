@@ -1,0 +1,7 @@
+defaults:
+  - criterion: cross_entropy
+  - optimizer: adam
+  - scheduler: step_lr
+
+_target_: src.models.segmentation_module.SegmentationModule
+_convert_: all

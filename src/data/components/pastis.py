@@ -4,10 +4,15 @@ import json
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import torch
 from pathlib import Path
 from torch.utils.data import Dataset
 from typing import Any, Callable, Literal, Optional, Union
+from tqdm import tqdm
+from ..functional import normalize
+from ...utils.pylogger import RankedLogger
+
+
+_logger = RankedLogger(__name__, rank_zero_only=True)
 
 
 _PROPS = {
@@ -43,7 +48,7 @@ def load_metadata(
     _assert_folds_in_range(folds)
 
     metadata_file_path = Path(data_dir) / "metadata.geojson"
-    print(f"Loading PASTIS metadata from {metadata_file_path}, folds: {folds}")
+    _logger.info(f"Loading PASTIS metadata from {metadata_file_path}, folds: {folds}")
     metadata_df = gpd.read_file(metadata_file_path)
     metadata_df = metadata_df[metadata_df["Fold"].isin(folds)]
     metadata_df = metadata_df.reset_index(drop=True)
@@ -53,40 +58,37 @@ def load_metadata(
 def load_data_mean_std(
         data_dir: Union[str, Path],
         folds: _FOLDS = _PROPS["folds"]
-        ) -> tuple[torch.Tensor, torch.Tensor]:
+        ) -> tuple[np.ndarray, np.ndarray]:
     _assert_folds_in_range(folds)
     
     norm_file_path = Path(data_dir) / "NORM_S2_patch.json"
-    print(f"Loading PASTIS mean and std from {norm_file_path}, folds: {folds}")
+    _logger.info(f"Loading PASTIS mean and std from {norm_file_path}, folds: {folds}")
     with open(norm_file_path, "r") as f:
         norm_dict = json.load(f)
 
         mean = [norm_dict[f"Fold_{fold}"]["mean"] for fold in folds]
-        mean = np.array(mean).mean(axis=0)
-        mean = torch.from_numpy(mean).to(torch.float32)
+        mean = np.stack(mean).mean(axis=0).astype(np.float32)
 
         std = [norm_dict[f"Fold_{fold}"]["std"] for fold in folds]
-        std = np.array(std).mean(axis=0)
-        std = torch.from_numpy(std).to(torch.float32)
+        std = np.stack(std).mean(axis=0).astype(np.float32)
 
     return (mean, std)
 
 
+_metadata = Union[_FOLDS, gpd.GeoDataFrame, Callable[..., gpd.GeoDataFrame]]
 class PASTISDatasetS2(Dataset):
     PROPS = _PROPS
 
     def __init__(
             self,
             data_dir: Union[str, Path],
-            metadata: Union[_FOLDS, gpd.GeoDataFrame, Callable[..., gpd.GeoDataFrame]] = _PROPS["folds"],
-            transform: Optional[Callable[[np.ndarray], Any]] = None,
-            target_transform: Optional[Callable[[np.ndarray], Any]] = None,
-            class_mapping: Optional[dict] = None
+            metadata: _metadata = _PROPS["folds"],
+            normalize: bool = True,
+            transform: Optional[Callable[[tuple[np.ndarray, np.ndarray]], Any]] = None
             ):
         self.data_dir = Path(data_dir)
+        self.normalize = normalize
         self.transform = transform
-        self.target_transform = target_transform
-        self.class_mapping = np.vectorize(lambda x: class_mapping[x]) if class_mapping else None
 
         if callable(metadata):
             self.metadata = metadata()
@@ -97,9 +99,14 @@ class PASTISDatasetS2(Dataset):
         else:
             raise ValueError(f"Invalid metadata type: {type(metadata)}")
         
-        print(f"Loaded PASTIS dataset with {len(self.metadata)} samples")
+        if normalize and isinstance(metadata, list):
+            self.norm = load_data_mean_std(data_dir, metadata)
+        else:
+            self.norm = self._calculate_norm_mean_std()
 
-    def _load_patch_data_S2(self, patch_id: int) -> np.ndarray:
+        _logger.info(f"Loaded PASTIS dataset with {len(self.metadata)} samples")
+
+    def _load_patch_data(self, patch_id: int) -> np.ndarray:
         patch_file_path = self.data_dir / "DATA_S2" / f"S2_{patch_id}.npy"
         patch_data = np.load(patch_file_path)
         return patch_data
@@ -109,28 +116,39 @@ class PASTISDatasetS2(Dataset):
         target = np.load(target_file_path)
         return target
 
-    def _load_data(self, patch_id: int) -> tuple[np.ndarray, np.ndarray]:
-        data = (
-            self._load_patch_data_S2(patch_id).astype(np.float32),
-            self._load_segmentation_annotation(patch_id).astype(np.int64)
+    def _calculate_norm_mean_std(self) -> tuple[np.ndarray, np.ndarray]:
+        mean = []
+        std = []
+        _logger.info("Calculating normalization mean and std")
+        for patch_id in tqdm(self.metadata["ID_PATCH"].unique()):
+            data = self._load_patch_data(patch_id)
+            mean.append(data.mean(axis=(0, 2, 3)))
+            std.append(data.std(axis=(0, 2, 3)))
+        mean = np.stack(mean).mean(axis=0).astype(np.float32)
+        std = np.stack(std).mean(axis=0).astype(np.float32)
+
+        return (mean, std)
+
+    def _normalize_data(self, data: np.ndarray) -> np.ndarray:
+        return normalize(
+            data,
+            self.norm[0][None, :, None, None],
+            self.norm[1][None, :, None, None]
             )
-        return data
 
     def __len__(self):
         return len(self.metadata)
     
     def __getitem__(self, idx: int) -> tuple[Any, Any]:
         patch_id = self.metadata.iloc[idx]["ID_PATCH"]
-        data, target = self._load_data(patch_id)
+        data = self._load_patch_data(patch_id).astype(np.float32)
+        target = self._load_segmentation_annotation(patch_id).astype(np.int64)
 
-        if self.class_mapping:
-            target = self.class_mapping(target)
+        if self.normalize:
+            data = self._normalize_data(data)
 
         if self.transform:
-            data = self.transform(data)
-
-        if self.target_transform:
-            target = self.target_transform(target)
+            data, target = self.transform((data, target))
         
         return (data, target)
 
@@ -140,18 +158,16 @@ class PASTISSubpatchedDatasetS2(PASTISDatasetS2):
             self,
             data_dir: Union[str, Path],
             subpatch_size: int,
-            metadata: Union[_FOLDS, gpd.GeoDataFrame, Callable[[Union[str, Path]], gpd.GeoDataFrame]] = load_metadata,
-            subpatching_mode: _SUBPATCHING_MODE = "equidistant",
-            transform: Optional[Callable[[np.ndarray], Any]] = None,
-            target_transform: Optional[Callable[[np.ndarray], Any]] = None,
-            class_mapping: Optional[dict] = None
+            metadata: _metadata = _PROPS["folds"],
+            subpatching_mode: _SUBPATCHING_MODE = "sequential",
+            normalize: bool = True,
+            transform: Optional[Callable[[tuple[np.ndarray, np.ndarray]], Any]] = None
             ):
-        super().__init__(data_dir, metadata, transform, target_transform)
+        super().__init__(data_dir, metadata, normalize, transform)
         self.subpatch_size = subpatch_size
         assert subpatching_mode in ["sequential", "stride", "equidistant", "random"],\
             "Subpatching mode must be one of 'sequential', 'stride', 'equidistant' or 'random'"
         self.subpatching_mode = subpatching_mode
-        self.class_mapping = np.vectorize(lambda x: class_mapping[x]) if class_mapping else None
         self._gather_subpatches()
 
     def _gather_subpatches(self):
@@ -194,18 +210,61 @@ class PASTISSubpatchedDatasetS2(PASTISDatasetS2):
     def __getitem__(self, idx: int) -> tuple[Any, Any]:
         subpatch = self.metadata_df.iloc[idx]
         patch_id = subpatch["ID_PATCH"]
-        data, target = self._load_data(patch_id)
-
-        if self.class_mapping:
-            target = self.class_mapping(target)
+        data = self._load_patch_data(patch_id).astype(np.float32)
+        target = self._load_segmentation_annotation(patch_id).astype(np.int64)
 
         timestamps = subpatch["Timestamp_ids"]
         data = data[timestamps]
 
-        if self.transform:
-            data = self.transform(data)
+        if self.normalize:
+            data = self._normalize_data(data)
 
-        if self.target_transform:
-            target = self.target_transform(target)
+        if self.transform:
+            data, target = self.transform((data, target))
         
         return (data, target)
+
+
+class PASTISDatasetS2Multitarget(PASTISDatasetS2):
+    def __init__(
+            self,
+            data_dir: Union[str, Path],
+            metadata: _metadata = _PROPS["folds"],
+            normalize: bool = True,
+            transform: Optional[Callable[[tuple[np.ndarray, np.ndarray]], Any]] = None
+            ):
+        super().__init__(data_dir, metadata, normalize, transform)
+
+
+class PASTISSubpatchedDatasetS2Multitarget(PASTISSubpatchedDatasetS2):
+    def __init__(
+            self,
+            data_dir: Union[str, Path],
+            subpatch_size: int,
+            metadata: _metadata = _PROPS["folds"],
+            subpatching_mode: _SUBPATCHING_MODE = "sequential",
+            normalize: bool = True,
+            transform: Optional[Callable[[tuple[np.ndarray, np.ndarray]], Any]] = None
+            ):
+        super().__init__(
+            data_dir, subpatch_size, metadata, subpatching_mode, normalize, transform
+            )
+        
+    def __getitem__(self, idx: int) -> tuple[Any, Any]:
+        subpatch = self.metadata_df.iloc[idx]
+        patch_id = subpatch["ID_PATCH"]
+        data = self._load_patch_data(patch_id).astype(np.float32)
+        target = self._load_segmentation_annotation(patch_id).astype(np.int64)
+
+        timestamps = subpatch["Timestamp_ids"]
+        data = data[timestamps]
+        target = target[timestamps]
+
+        if self.normalize:
+            data = self._normalize_data(data)
+
+        if self.transform:
+            data, target = self.transform((data, target))
+
+        return (data, target)
+    
