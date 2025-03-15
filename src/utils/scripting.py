@@ -7,7 +7,7 @@ from typing import Any, Callable, Union
 from .pylogger import RankedLogger
 
 
-log = RankedLogger(__name__, rank_zero_only=True)
+_logger = RankedLogger(__name__, rank_zero_only=True)
 
 
 def dynamic_import(module: Union[str, ModuleType], name: str) -> Any:
@@ -45,7 +45,7 @@ def loose_bind_kwargs(warn_unused: bool = False) -> Callable:
             if warn_unused:
                 unused = set(kwargs.keys()) - set(matching.keys())
                 if unused:
-                    log.warning(f"Discarded kwarg: {unused}")
+                    _logger.warning(f"Discarded kwarg: {unused}")
             return fn(*args, **matching)
         
         return wrapper
