@@ -2,20 +2,20 @@
 
 import torch
 import warnings
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import colormaps
 from torchvision.utils import make_grid
 from typing import Callable, Optional, Union
 
 
-def get_channels_permuted(img: np.ndarray, channels: list[int]) -> np.ndarray:
+def pick_channels(img: np.ndarray, channels: list[int]) -> np.ndarray:
     assert isinstance(img, np.ndarray), f"Image must be a numpy array, got {type(img)}"
     assert img.ndim in [4, 3], f"Image must be 3D or 4D, got {img.ndim}"
     return img[..., channels]
 
 
-def get_channels_permuted_tensor(img: torch.Tensor, channels: list[int]) -> torch.Tensor:
+def pick_channels_tensor(img: torch.Tensor, channels: list[int]) -> torch.Tensor:
     assert isinstance(img, torch.Tensor), f"Image must be a torch tensor, got {type(img)}"
     assert img.ndim in [4, 3], f"Image must be 3D or 4D, got {img.ndim}"
     return img[channels]
@@ -102,8 +102,8 @@ def plot_multi_img_tensor(
         subtitle: Optional[list[str]] = None,
         base_size: int = 6
         ):
-    img = img_tensor_to_numpy(img)
-    return plot_multi_img(img, title, subtitle, base_size)
+    np_img = img_tensor_to_numpy(img)
+    return plot_multi_img(np_img, title, subtitle, base_size)
 
 
 def make_grid_tensor(
@@ -111,13 +111,13 @@ def make_grid_tensor(
         nrow: int = 8,
         padding: int = 2,
         normalize: bool = False,
-        value_range: Optional[tuple[float, float]] = None,
+        value_range: Optional[tuple[int, int]] = None,
         scale_each: bool = False,
-        pad_value: int = 0
+        pad_value: float = 0
         ) -> torch.Tensor:
     if isinstance(img, list):
         assert all(w.ndim == 3 for w in img), "Expected all images to be of format CHW"
-        img = torch.cat(img, dim=0)
+        img = torch.stack(img, dim=0)
     else:
         assert img.ndim in [3, 4], "Expected image to be a single CHW image or a tensor of format CDHW"
         img = img.transpose(0, 1)
@@ -136,7 +136,7 @@ def make_grid_tensor(
 def mask_to_rgb(
         mask: np.ndarray,
         num_classes: int = 0,
-        colormap: Callable[..., np.ndarray] = mpl.colormaps["tab20"]
+        colormap: Callable[..., np.ndarray] = colormaps["tab20"]
         ) -> np.ndarray:
     assert mask.ndim == 2, f"Mask must be 2D, got {mask.ndim}"
     if num_classes == 0:
@@ -149,13 +149,13 @@ def mask_to_rgb(
 def mask_tensor_to_rgb_tensor(
         mask: torch.Tensor,
         num_classes: int = 0,
-        colormap: Callable[..., np.ndarray] = mpl.colormaps["tab20"]
+        colormap: Callable[..., np.ndarray] = colormaps["tab20"]
         ) -> torch.Tensor:
     assert mask.ndim == 2, f"Mask must be 2D, got {mask.ndim}"
-    mask = mask.numpy()
+    np_mask = mask.numpy()
     if num_classes == 0:
-        num_classes = mask.max() + 1
-    mask = mask / (num_classes - 1)
-    mask = colormap(mask)[..., :3]
-    mask = torch.from_numpy(mask).permute(2, 0, 1)
-    return mask
+        num_classes = np_mask.max() + 1
+    np_mask = np_mask / (num_classes - 1)
+    np_mask = colormap(np_mask)[..., :3]
+    np_mask = torch.from_numpy(np_mask).permute(2, 0, 1)
+    return np_mask
