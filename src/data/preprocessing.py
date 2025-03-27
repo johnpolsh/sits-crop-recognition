@@ -1,8 +1,7 @@
 #
 
 import torch
-from torch.utils.data import Dataset
-from typing import Union
+from typing import Optional
 
 
 def normalize(
@@ -24,25 +23,15 @@ def normalize(
 def compute_class_weight(
         targets: torch.Tensor,
         num_classes: int,
-        clip_min: float = 0.,
-        clip_max: float = 1.,
-        norm: bool = True
+        ignore_index: int = -100,
+        clip_min: Optional[float] = 0.,
+        clip_max: Optional[float] = None
         ) -> torch.Tensor:
     bins, counts = torch.unique(targets, return_counts=True)
+    mask_idx = bins != ignore_index
+    bins = bins[mask_idx]
+    counts = counts[mask_idx]
     weights = torch.zeros(num_classes, device=targets.device)
     weights[bins] = counts.max() / counts
-    if norm:
-        weights = weights / weights.max()
-    weights = weights.clip(clip_min, clip_max)
+    weights = torch.clamp(weights, clip_min, clip_max)
     return weights
-
-
-def compute_dataset_weight(
-        dataset: Dataset,
-        num_classes: int,
-        clip_min: float = 0.,
-        clip_max: float = 10.,
-        device: Union[str, torch.device] = "cpu"
-        ) -> torch.Tensor:
-    targets = torch.cat([target.to(device) for _, target in dataset])
-    return compute_class_weight(targets, num_classes, clip_min, clip_max)

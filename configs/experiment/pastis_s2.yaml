@@ -16,6 +16,13 @@ model:
     patch_size: 2
   criterion:
     ignore_index: 19
+    # weight:
+    #   _target_: src.pytorch.losses.soft_weight
+    #   weight:
+    #     _target_: torch.Tensor
+    #     data:
+    #       _target_: src.data.components.pastis.get_props
+    #       props: "class_weight"
 
 trainer:
   max_epochs: 60

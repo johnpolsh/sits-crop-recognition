@@ -6,6 +6,8 @@ from typing import Any, Callable, Optional, Union
 from .functional import (
     Transformable,
     hflip,
+    mean,
+    median,
     rotate90,
     vflip
     )
@@ -66,7 +68,7 @@ class Reshape:
 
     def __call__(self, data: Transformable) -> Transformable:
         return data.reshape(self.shape)
-    
+
 
 class MultidataTransform:
     @loose_bind_kwargs()
@@ -122,3 +124,38 @@ class RandomVFlip(MultidataTransform):
         if np.random.rand() > self.p:
             return tuple(vflip(d) for d in data)
         return data
+
+
+class RandomTimestampAggregate:
+    __choices__ = ["mean", "median", "pick"]
+    @loose_bind_kwargs()
+    def __init__(
+        self,
+        groups: int = 2,
+        augments_probs: list[float] = [0.5, 0.5, 0.5]
+        ):
+        self.groups = groups
+        self.augments_probs = augments_probs
+
+    def __call__(self, data: Transformable) -> Transformable:
+        assert data.ndim == 4, "Data must be 3D"
+        assert data.shape[0] % self.groups == 0, "Timestamps dim must be divisible by groups"
+        choice = np.random.choice(self.__choices__, p=self.augments_probs)
+        _, C, H, W = data.shape
+        if choice == "mean":
+            data = data.reshape(self.groups, -1, C, H, W)
+            return mean(data, axis=0)
+        elif choice == "median":
+            data = data.reshape(self.groups, -1, C, H, W)
+            return median(data, axis=0)
+        elif choice == "pick":
+            indices = np.random.choice(
+                data.shape[0],
+                size=data.shape[0] // self.groups,
+                replace=False
+                )
+            indices = np.sort(indices)
+            return data[indices]
+        
+        return data
+    

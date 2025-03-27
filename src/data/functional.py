@@ -31,3 +31,18 @@ def vflip(data: Transformable) -> Transformable:
         return data.flip(-2)
     else:
         return np.flip(data, axis=-2)
+
+
+def mean(data: Transformable, axis: int, keepdim: bool = False) -> Transformable:
+    if isinstance(data, torch.Tensor):
+        return data.mean(dim=axis, keepdim=keepdim)
+    else:
+        return np.mean(data, axis=axis, keepdims=keepdim)
+
+
+def median(data: Transformable, axis: int, keepdim: bool = False) -> Transformable:
+    if isinstance(data, torch.Tensor):
+        return data.median(dim=axis, keepdim=keepdim)[0]
+    else:
+        return np.median(data, axis=axis, keepdims=keepdim)
+    

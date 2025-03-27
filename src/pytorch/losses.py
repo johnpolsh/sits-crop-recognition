@@ -10,6 +10,13 @@ from typing import (
 from src.data.preprocessing import compute_class_weight
 
 
+def soft_weight(
+        weight: torch.Tensor,
+        alpha: float = 0.5
+        ) -> torch.Tensor:
+    return weight ** alpha
+
+
 class DynamicWeightCrossEntropyLoss(nn.Module):
     def __init__(
             self,
@@ -21,7 +28,7 @@ class DynamicWeightCrossEntropyLoss(nn.Module):
             reduction: str = "mean",
             label_smoothing: float = 0.0,
             clip_min: float = 0.,
-            clip_max: float = 10.
+            clip_max: float = 10.,
             ):
         super().__init__()
         self.num_classes = num_classes
@@ -43,6 +50,7 @@ class DynamicWeightCrossEntropyLoss(nn.Module):
             weight = compute_class_weight(
                 targets,
                 self.num_classes,
+                ignore_index=self.ignore_index,
                 clip_min=self.clip_min,
                 clip_max= self.clip_max
                 )

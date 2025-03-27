@@ -19,10 +19,31 @@ _PROPS = {
     "img_size": (128, 128),
     "num_classes": 20,
     "num_channels": 10,
-    "folds": [1, 2, 3, 4, 5]
+    "folds": [1, 2, 3, 4, 5],
+    "weight": [
+        1.0000, 2.1824, 5.8185, 4.6089, 19.6172,
+        22.5533, 62.4575, 40.2160, 14.3466, 48.9725,
+        54.0988, 37.8966, 42.6151, 142.5403, 25.0291,
+        37.8696, 38.6029, 76.8348, 95.2738,  4.1428
+    ],
+    "class_weight": [
+        1.0000, 2.1824, 5.8185, 4.6089, 19.6172,
+        22.5533, 62.4575, 40.2160, 14.3466, 48.9725,
+        54.0988, 37.8966, 42.6151, 142.5403, 25.0291,
+        37.8696, 38.6029, 76.8348, 95.2738
+    ],
 }
 _FOLDS = list[Literal[1, 2, 3, 4, 5]]
 _SUBPATCHING_MODE = Literal["sequential", "stride", "equidistant", "random"]
+
+
+def get_props(props: Optional[Union[str, list[str]]] = None) -> dict:
+    if props is None:
+        return _PROPS
+    elif isinstance(props, str):
+        return _PROPS[props]
+    
+    return {prop: _PROPS[prop] for prop in props}
 
 
 def _get_npy_file_header(file_path: Union[str, Path]) -> tuple:

@@ -1,0 +1,10 @@
+_target_: src.pytorch.losses.DynamicWeightCrossEntropyLoss
+num_classes: ???
+weight_mode: "per_batch"
+size_average: null
+ignore_index: 255
+reduce: null
+reduction: "mean"
+label_smoothing: 0.0
+clip_min: 0.
+clip_max: 10.

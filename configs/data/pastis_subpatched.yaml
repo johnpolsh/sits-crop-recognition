@@ -9,13 +9,18 @@ train:
     _target_: src.data.components.pastis.PASTISSubpatchedDatasetS2
     _partial_: true
     data_dir: ${oc.env:PASTIS_DATA_DIR}
-    subpatch_size: 4
+    subpatch_size: 8
     metadata: [1, 3, 5]
     subpatching_mode: "sequential"
     normalize: true
     transform:
       _target_: torchvision.transforms.Compose
       transforms:
+        - _target_: src.data.transforms.SelectiveMultidataTransform
+          transform:
+            _target_: src.data.transforms.RandomTimestampAggregate
+            groups: 2
+          indices: 0
         - _target_: src.data.transforms.SelectiveMultidataTransform
           transform:
             _target_: src.data.transforms.Reshape
