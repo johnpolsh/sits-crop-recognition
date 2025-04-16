@@ -8,10 +8,7 @@ from terratorch.models.backbones.prithvi_vit import (
 )
 from torch import nn
 from typing import Literal, Optional, Union
-from .heads.unetr import DeconvHeadUNetTR
-from .heads.unetq import TemporalAttentionDeconv
-from .heads.utrseg import UTRSegDecoder
-from ..base_module import get_parameters
+from .components.heads.unetr import DeconvHeadUNetTR
 
 
 _decoder_variants = Literal["FCNDecoder", "UNeTRDecoder", "TemporalAttention", "UTRSegDecoder"]
@@ -74,6 +71,13 @@ class PrithviSegmentation(nn.Module):
         self.num_classes = num_classes
         self.decoder = decoder
 
+        self.example_input_array = torch.randn(
+            1,
+            in_chans * num_frames,
+            img_size,
+            img_size
+        )
+
         encoder_kwargs = {
             "bands": bands,
             "pretrained": weights in ["default"],
@@ -98,10 +102,15 @@ class PrithviSegmentation(nn.Module):
         if decoder in ["TemporalAttention"]:
             decoder_kwargs["grid_size"] = self.backbone.patch_embed.grid_size
         self.head = _get_segmentation_head(**decoder_kwargs)
+    
+    @property
+    def backbone_params(self):
+        return self.backbone.parameters()
+    
+    @property
+    def head_params(self):
+        return self.head.parameters()
 
-        self.backbone_params = get_parameters(self.backbone)
-        self.head_params = get_parameters(self.head)
-        
     def forward_backbone(self, x: torch.Tensor) -> torch.Tensor:
         return self.backbone(x)
 
@@ -117,13 +126,14 @@ class PrithviSegmentation(nn.Module):
         return self.head(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        _, C, F, H, W = x.shape
+        _, N, H, W = x.shape
+
         assert H == W == self.img_size,\
-            f"Expected {H=} and {W=} to be equal to {self.img_size=}"
-        assert C == self.in_chans,\
-            f"Expected {C=} to be equal to {self.in_chans=}"
-        assert F == self.num_frames,\
-            f"Expected {F=} to be equal to {self.num_frames=}"
+            f"Expected image size {self.img_size=} but got {H=}, {W=}"
+        assert N == self.in_chans * self.num_frames,\
+            f"Expected concatenated channels to be {self.in_chans * self.num_frames} but got {N=}"
+        
+        x = x.view(-1, self.in_chans, self.num_frames, H, W)
         
         embeddings = self.forward_backbone(x)
         out = self.forward_head(embeddings)

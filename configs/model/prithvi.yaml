@@ -1,0 +1,12 @@
+defaults:
+  - base.yaml
+
+net:
+  _target_: src.models.modules.prithvi.PrithviSegmentation
+  img_size: 256
+  in_chans: 6
+  num_frames: 3
+  num_classes: 2
+  weights: "default"
+  decoder: "UNeTRDecoder"
+  voxel_reduce: "conv"

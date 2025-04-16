@@ -4,17 +4,12 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from typing import (
+    Callable,
     Literal,
     Optional
 )
+from segmentation_models_pytorch.losses import dice
 from src.data.preprocessing import compute_class_weight
-
-
-def soft_weight(
-        weight: torch.Tensor,
-        alpha: float = 0.5
-        ) -> torch.Tensor:
-    return weight ** alpha
 
 
 class DynamicWeightCrossEntropyLoss(nn.Module):
@@ -68,3 +63,46 @@ class DynamicWeightCrossEntropyLoss(nn.Module):
             label_smoothing=self.label_smoothing
             )
         
+
+class CompositeLoss(nn.Module):
+    def __init__(
+            self,
+            criterions: list[Callable[..., torch.Tensor]],
+            weights: Optional[list[float]] = None
+            ):
+        super().__init__()
+        self.criterions = criterions
+        self.weights = weights if weights is not None else [1.0] * len(criterions)
+        assert len(self.criterions) == len(self.weights), "Length of criterions and weights must be equal"
+        assert all(isinstance(w, (int, float)) for w in self.weights), "All weights must be int or float"
+    
+    def forward(
+            self,
+            logits: torch.Tensor,
+            targets: torch.Tensor
+            ) -> torch.Tensor:
+        losses = []
+        for criterion, weight in zip(self.criterions, self.weights):
+            losses.append(weight * criterion(logits, targets))
+        loss = torch.stack(losses).sum()
+        return loss
+
+
+class CEDLoss(CompositeLoss):
+    def __init__(
+            self,
+            ignore_index: int = -100,
+            weights: list[float] = [0.5, 0.5],
+            ):
+        super().__init__([
+            nn.CrossEntropyLoss(ignore_index=ignore_index),
+            dice.DiceLoss(
+                mode=dice.MULTICLASS_MODE,
+                from_logits=True,
+                ignore_index=ignore_index
+                )
+            ],
+            weights=weights
+            )
+        self.ignore_index = ignore_index
+        self.mode = dice.MULTICLASS_MODE

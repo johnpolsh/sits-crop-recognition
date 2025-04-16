@@ -131,6 +131,45 @@ class SwinTransformerV2Stage(nn.Module):
         return x
 
 
+class MlpPatchEmbed(nn.Module):
+    def __init__(
+            self,
+            img_size: int = 224,
+            patch_size: int = 16,
+            in_chans: int = 3,
+            embed_dim: int = 768,
+            norm_layer: Optional[Callable] = None
+            ):
+        super().__init__()
+        self.patch_size = (patch_size, patch_size)
+        self.img_size = (img_size, img_size)
+        self.grid_size = (
+            self.img_size[0] // self.patch_size[0],
+            self.img_size[1] // self.patch_size[1]
+            )
+        self.num_patches = self.grid_size[0] * self.grid_size[1]
+        self.in_chans = in_chans
+        self.embed_dim = embed_dim
+
+        self.proj = nn.Linear(in_chans * self.patch_size[0] * self.patch_size[1], embed_dim)
+        self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, C, H, W = x.shape
+        assert H == self.img_size[0] and W == self.img_size[1],\
+            f"Expected input shape `{H}x{W}` to be equal to `{self.img_size[0]}x{self.img_size[1]}`"
+        
+        p, q = self.patch_size
+        h, w = self.grid_size
+        x = x.view(B, C, p, q, h, w)
+        x = x.permute(0, 2, 4, 3, 5, 1)
+        x = x.reshape(B, h, w, p * q * C)
+        x = self.proj(x)
+        x = self.norm(x)
+        #x = x.permute(0, 3, 1, 2)
+        return x
+    
+
 class SwinTransformerV2(nn.Module):
     def __init__(
             self,
@@ -333,6 +372,28 @@ class FinalExpandHead(nn.Module):
         x = self.conv(x)
         return x
 
+
+class MlpFinalExpandHead(nn.Module):
+    def __init__(
+            self,
+            embed_dim: int,
+            patch_size: int,
+            num_classes: int,
+            norm_layer: Callable[..., nn.Module] = nn.LayerNorm
+            ):
+        super().__init__()
+        self.num_classes = num_classes
+        self.out_dim = embed_dim // patch_size
+
+        self.expand = PatchExpand(embed_dim, patch_size, norm_layer)
+        self.fc = nn.Linear(self.out_dim, num_classes, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.expand(x)
+        x = self.fc(x)
+        x = x.permute(0, 3, 1, 2)
+        return x
+    
 
 class SwinV2Unet(SwinTransformerV2):
     def __init__(

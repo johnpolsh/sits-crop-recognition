@@ -12,7 +12,6 @@ from torch import nn
 from torchmetrics import (
     Accuracy,
     CohenKappa,
-    Dice,
     JaccardIndex,
     Precision,
     Recall,
