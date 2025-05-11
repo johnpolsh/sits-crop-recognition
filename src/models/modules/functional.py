@@ -4,6 +4,11 @@ import inspect
 import numpy as np
 import torch
 from enum import Enum
+from timm.layers.format import (
+    Format,
+    nchw_to,
+    nhwc_to
+)
 from lightning.pytorch.trainer.states import RunningStage
 from torch import nn
 from typing import (
@@ -13,6 +18,10 @@ from typing import (
     Optional,
     Union
 )
+
+
+_int_or_tuple_2_t = int | tuple[int, int]
+_int_or_tuple_3_t = int | tuple[int, int, int]
 
 
 def _ntuple(n: int):
@@ -33,6 +42,13 @@ to_ntuple = _ntuple
 class InputFormat(str, Enum):
     NCHW = 'NCHW'
     NCDHW = 'NCDHW'
+
+
+class Format3D(str, Enum):
+    NCDHW = 'NCDHW'
+    NDHWC = 'NDHWC'
+    NCL = 'NCL'
+    NLC = 'NLC'
 
 
 def get_input_format(input: torch.Tensor) -> InputFormat:
@@ -67,6 +83,26 @@ def ncdhw_to_nchw(input: torch.Tensor) -> torch.Tensor:
     return input.reshape(B, -1, H, W)
 
 
+def ncdhw_to(x: torch.Tensor, fmt: Format3D) -> torch.Tensor:
+    if fmt == Format3D.NDHWC:
+        x = x.permute(0, 2, 3, 4, 1)
+    elif fmt == Format3D.NLC:
+        x = x.flatten(2).transpose(1, 2)
+    elif fmt == Format3D.NCL:
+        x = x.flatten(2)
+    return x
+
+
+def ndhwc_to(x: torch.Tensor, fmt: Format3D) -> torch.Tensor:
+    if fmt == Format3D.NCDHW:
+        x = x.permute(0, 4, 1, 2, 3)
+    elif fmt == Format3D.NLC:
+        x = x.flatten(1, 2)
+    elif fmt == Format3D.NCL:
+        x = x.flatten(1, 2).transpose(1, 2)
+    return x
+
+
 def freeze_parameters(parameters: Iterable, freeze: bool) -> None:
     """
     Freezes or unfreezes parameters by setting requires_grad to `not freeze`.
@@ -78,38 +114,6 @@ def freeze_parameters(parameters: Iterable, freeze: bool) -> None:
     for param in parameters:
         param.requires_grad = not freeze
 
-# BUG: get_parameters is not working as expected
-def get_parameters(
-        module: nn.Module,
-        include_only: list[str] = [],
-        exclude: list[str] = []
-        ) -> list[nn.Parameter]:
-    """
-    Retrieve parameters from a PyTorch module based on inclusion and exclusion criteria.
-
-    Args:
-        module (nn.Module): The PyTorch module from which to retrieve parameters.
-        include_only (list[str], optional): List of parameter names to include. If empty, all parameters are considered.
-        exclude (list[str], optional): List of parameter names to exclude.
-
-    Returns:
-        list[nn.Parameter]: List of parameters that match the inclusion and exclusion criteria.
-    """
-    if not include_only:
-        params = []
-        for full_name, param in module.named_parameters():
-            name = full_name.split(".")[0]
-            print(name)
-            if name not in exclude:
-                params.append(param)
-    else:
-        params = []
-        for full_name, param in module.named_parameters():
-            name = full_name.split(".")[0]
-            print(name)
-            if name in include_only and name not in exclude:
-                params.append(param)
-    return params
 
 # NOTE: might move to utils
 def extract_signature(cls: Any) -> dict[str, inspect.Parameter]:
@@ -196,3 +200,67 @@ def named_apply(
     if depth_first and include_root:
         fn(module=module, name=name)
     return module
+
+
+def patchify(images: torch.Tensor, patch_size: int) -> torch.Tensor:
+    N, C, H, W = images.shape
+    assert H == W and H % patch_size == 0
+
+    patch_h = patch_w = H // patch_size
+    num_patches = patch_h * patch_w
+
+    patches = images.reshape(shape=(N, C, patch_h, patch_size, patch_w, patch_size))
+    patches = torch.einsum("nchpwq->nhwpqc", patches)
+    patches = patches.reshape(shape=(N, num_patches, patch_size**2 * C))
+
+    return patches
+
+
+def unpatchify(
+        patches: torch.Tensor,
+        patch_size: int,
+        channels: int = 3
+        ) -> torch.Tensor:
+    N, C = patches.shape[0], channels
+    patch_h = patch_w = int(patches.shape[1] ** 0.5)
+    assert patch_h * patch_w == patches.shape[1]
+
+    images = patches.reshape(shape=(N, patch_h, patch_w, patch_size, patch_size, C))
+    images = torch.einsum("nhwpqc->nchpwq", images)
+    images = images.reshape(shape=(N, C, patch_h * patch_size, patch_h * patch_size))
+    return images
+
+
+def depatchify_temporal(
+        x: torch.Tensor,
+        patch_size: int,
+        tubelet_size: int,
+        img_size: int
+        ) -> torch.Tensor:
+    b, fhw, tpqc = x.shape
+
+    h = w = img_size // patch_size
+    f = fhw // (h * w)
+    c = tpqc // (tubelet_size * patch_size**2)
+    x = x.reshape(b, f, h, w, tubelet_size, patch_size, patch_size, c)
+    x = torch.einsum("bfhwtpqc->bcfthpwq", x)
+    x = x.reshape(b, c, f * tubelet_size, h * patch_size, w * patch_size)
+    
+    return x
+
+
+def patchify_temporal(
+        x: torch.Tensor,
+        patch_size: int,
+        tubelet_size: int
+        ) -> torch.Tensor:
+    b, c, t, h, w = x.shape
+
+    f = t // tubelet_size
+
+    w = h = h // patch_size
+    x = x.reshape(b, c, f, tubelet_size, h, patch_size, w, patch_size)
+    x = torch.einsum("bcfthpwq->bfhwtpqc", x)
+    x = x.reshape(b, f * h * w, tubelet_size * patch_size**2 * c)
+
+    return x

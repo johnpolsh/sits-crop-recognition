@@ -1,0 +1,4 @@
+_target_: src.pytorch.losses.CEDFLoss
+_convert_: "all"
+ignore_index: 255
+weights: [0.4, 0.4, 0.2]

@@ -1,0 +1,35 @@
+# @package _global_
+
+defaults:
+  - _self_
+  - callbacks: default.yaml
+  - data: null
+  - model: null
+  - logger: null # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
+  - plugins: default.yaml
+  - trainer: default.yaml
+  - paths: default.yaml
+  - extras: default.yaml
+  - hydra: default.yaml
+
+  - experiment: null
+
+  - hparams_search: null
+  - optional local: default.yaml
+  - debug: null
+
+experiment_name: null
+experiment_description: "A simple template to train a model with PyTorch Lightning"
+task_name: "train"
+tags:
+  mode: "dev"
+  stage: ${task_name}
+  dataset: null
+  model: ${model.net._target_}
+  description: null # not the same as experiment_description, this is relative to the run
+  version: "0.1"
+
+optimized_metric: "train/psnr"
+train: true
+ckpt_path: null
+seed: null

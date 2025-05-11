@@ -8,7 +8,7 @@ from terratorch.models.backbones.prithvi_vit import (
 )
 from torch import nn
 from typing import Literal, Optional, Union
-from .components.heads.unetr import DeconvHeadUNetTR
+from .components.heads.unetq import TemporalAttentionDeconv
 
 
 _decoder_variants = Literal["FCNDecoder", "UNeTRDecoder", "TemporalAttention", "UTRSegDecoder"]
@@ -60,7 +60,7 @@ class PrithviSegmentation(nn.Module):
             num_classes: int,
             bands: list[HLSBands] = PRETRAINED_BANDS,
             weights: Optional[Literal["default"]] = "default",
-            decoder: _decoder_variants = "UNeTRDecoder",
+            decoder: _decoder_variants = "TemporalAttention",
             **kwargs
             ):
         assert len(bands) == in_chans, f"{bands=} must have {in_chans} elements"

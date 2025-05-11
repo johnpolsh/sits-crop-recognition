@@ -1,0 +1,23 @@
+# @package _global_
+
+defaults:
+  - override /data: pastis_subpatched.yaml
+  - override /trainer: gpu.yaml
+
+experiment_name: "pastis_mae"
+tags:
+  dataset: "pastis_subpatched"
+
+num_frames: 4
+tubelet_size: 1
+model:
+  net:
+    img_size: 128
+    in_channels: 10
+    num_frames: ${num_frames}
+    tubelet_size: ${tubelet_size}
+
+trainer:
+  max_epochs: 200
+  limit_val_batches: 0
+  limit_test_batches: 0

@@ -14,7 +14,7 @@ from torchmetrics import (
     CohenKappa,
     JaccardIndex,
     Precision,
-    Recall,
+    Recall
 )
 from typing import Any, Literal, Optional, Union
 from .base_module import BaseModule
@@ -59,7 +59,7 @@ def plot_temporal_prediction(
         batch_idx: int = 0,
         idx: int = -1
         ):
-    y = batch[1][idx].cpu().detach()
+    y = batch["target"][idx].cpu().detach()
     colormap = colormaps.get_cmap("tab20")
     y_mask = mask_tensor_to_rgb_tensor(
         y,
@@ -105,7 +105,7 @@ def plot_temporal_prediction_prob(
         batch,
         outputs,
         batch_idx: int = 0,
-        prob_idx: Optional[Union[int, list[int]]] = None,
+        prob_idx: Union[int, list[int]] | None = None,
         idx: int = -1
         ):
     logits = outputs["logits"][idx].cpu().detach()
@@ -254,7 +254,7 @@ class SegmentationModule(BaseModule):
 
         if isinstance(self.criterion, nn.Module):
             if hasattr(self.criterion, "mode"):
-                metric_task = self.criterion.mode # type: Literal["multiclass", "binary"]
+                metric_task = self.criterion.mode
             else:
                 metric_task = "multiclass" if self.net.num_classes > 1 else "binary"
 
@@ -372,9 +372,11 @@ class SegmentationModule(BaseModule):
                     )
                 )
 
-    def step(self, batch: tuple[Any, Any]):
-        x, y = batch
-        logits = self.forward(x)
+    def step(self, batch: dict):
+        x = batch["data"]
+        y = batch["target"]
+        dates = batch.get("dates", None)
+        logits = self.net.forward(x, dates)
 
         results = {
             "data": x,

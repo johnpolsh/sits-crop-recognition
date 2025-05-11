@@ -34,7 +34,7 @@ experiment_name: null
 
 # set the experiment description
 # this can be used in the logger and checkpoint callback
-experiment_description: "A simple template to train a model with PyTorch Lightning"
+experiment_description: "A simple experiment for training a segmentation model"
 
 # task name, determines output directory path
 task_name: "train"

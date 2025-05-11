@@ -1,12 +1,17 @@
-from typing import Any, Dict, List, Optional, Tuple
 
 import hydra
 import lightning as L
 import rootutils
 import torch
-from lightning import Callback, LightningDataModule, LightningModule, Trainer
+from lightning import (
+    Callback,
+    LightningDataModule,
+    LightningModule,
+    Trainer
+)
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
+from typing import Any, Dict, List, Optional, Tuple
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -114,7 +119,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     return metric_dict, object_dict
 
 
-@hydra.main(version_base="1.3", config_path="../configs", config_name="train.yaml")
+@hydra.main(version_base="1.3", config_path="../configs", config_name="train_segmentation.yaml")
 def main(cfg: DictConfig) -> Optional[float]:
     """Main entry point for training.
 

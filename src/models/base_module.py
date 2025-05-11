@@ -60,10 +60,7 @@ class BaseModule(LightningModule):
 
         # https://arxiv.org/abs/1904.06376
         torch.set_float32_matmul_precision("medium")
-
-        assert hasattr(net, "num_classes"),\
-            "Expected net to have `num_classes` attribute"
-
+        
         if net.example_input_array is None:
             assert hasattr(net, "in_channels"),\
                 "Expected net to have `in_channels` attribute"
@@ -111,13 +108,13 @@ class BaseModule(LightningModule):
     def _compute_loss(
             self,
             logits: torch.Tensor,
-            y: torch.Tensor
+            targets: torch.Tensor
             ) -> torch.Tensor:
         if isinstance(self.criterion, nn.Module):
-            return self.criterion(logits, y)
+            return self.criterion(logits, targets)
         
         criterion = self.criterion()
-        return criterion(logits, y)
+        return criterion(logits, targets)
     
     def _configure_optimizer_strategy(self, default_lr: float) -> optim.Optimizer:
         assert self.optimizer_strategy is not None,\

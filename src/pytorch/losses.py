@@ -8,7 +8,7 @@ from typing import (
     Literal,
     Optional
 )
-from segmentation_models_pytorch.losses import dice
+from segmentation_models_pytorch.losses import dice, focal
 from src.data.preprocessing import compute_class_weight
 
 
@@ -64,6 +64,25 @@ class DynamicWeightCrossEntropyLoss(nn.Module):
             )
         
 
+class HausdorffLoss(nn.Module):
+    def __init__(
+            self,
+            ignore_index: int = -100,
+            reduction: str = "mean",
+            ):
+        super().__init__()
+        self.ignore_index = ignore_index
+        self.reduction = reduction
+
+    def forward(
+            self,
+            logits: torch.Tensor,
+            targets: torch.Tensor
+            ) -> torch.Tensor:
+        # Implement Hausdorff loss calculation here
+        pass
+
+
 class CompositeLoss(nn.Module):
     def __init__(
             self,
@@ -99,6 +118,54 @@ class CEDLoss(CompositeLoss):
             dice.DiceLoss(
                 mode=dice.MULTICLASS_MODE,
                 from_logits=True,
+                ignore_index=ignore_index
+                )
+            ],
+            weights=weights
+            )
+        self.ignore_index = ignore_index
+        self.mode = dice.MULTICLASS_MODE
+
+
+class DCEDLoss(CompositeLoss):
+    def __init__(
+            self,
+            num_classes: int = 19,
+            ignore_index: int = -100,
+            weights: list[float] = [0.5, 0.5],
+            ):
+        super().__init__([
+            DynamicWeightCrossEntropyLoss(
+                num_classes=num_classes,
+                ignore_index=ignore_index
+                ),
+            dice.DiceLoss(
+                mode=dice.MULTICLASS_MODE,
+                from_logits=True,
+                ignore_index=ignore_index
+                )
+            ],
+            weights=weights
+            )
+        self.ignore_index = ignore_index
+        self.mode = dice.MULTICLASS_MODE
+
+
+class CEDFLoss(CompositeLoss):
+    def __init__(
+            self,
+            ignore_index: int = -100,
+            weights: list[float] = [0.5, 0.5, 0.2],
+            ):
+        super().__init__([
+            nn.CrossEntropyLoss(ignore_index=ignore_index),
+            dice.DiceLoss(
+                mode=dice.MULTICLASS_MODE,
+                from_logits=True,
+                ignore_index=ignore_index
+                ),
+            focal.FocalLoss(
+                mode=dice.MULTICLASS_MODE,
                 ignore_index=ignore_index
                 )
             ],

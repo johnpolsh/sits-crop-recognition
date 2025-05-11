@@ -37,7 +37,7 @@ _FOLDS = list[Literal[1, 2, 3, 4, 5]]
 _SUBPATCHING_MODE = Literal["sequential", "stride", "equidistant", "random"]
 
 
-def get_props(props: Optional[Union[str, list[str]]] = None) -> dict:
+def get_props(props: str | list[str] | None = None) -> dict:
     if props is None:
         return _PROPS
     elif isinstance(props, str):
@@ -46,14 +46,14 @@ def get_props(props: Optional[Union[str, list[str]]] = None) -> dict:
     return {prop: _PROPS[prop] for prop in props}
 
 
-def _get_npy_file_header(file_path: Union[str, Path]) -> tuple:
+def _get_npy_file_header(file_path: str | Path) -> tuple:
     with open(file_path, 'rb') as file:
         version = np.lib.format.read_magic(file)
         header_info = np.lib.format._read_array_header(file, version) # type: ignore
     return header_info
 
 
-def _get_npy_file_shape(file_path: Union[str, Path]) -> tuple[int, ...]:
+def _get_npy_file_shape(file_path: str | Path) -> tuple[int, ...]:
     return _get_npy_file_header(file_path)[0]
 
 
@@ -63,7 +63,7 @@ def _assert_folds_in_range(folds: list):
 
 
 def load_metadata(
-        data_dir: Union[str, Path],
+        data_dir: str | Path,
         folds: _FOLDS = _PROPS["folds"]
         ) -> gpd.GeoDataFrame:
     _assert_folds_in_range(folds)
@@ -77,7 +77,7 @@ def load_metadata(
 
 
 def load_data_mean_std(
-        data_dir: Union[str, Path],
+        data_dir: str | Path,
         folds: _FOLDS = _PROPS["folds"]
         ) -> tuple[np.ndarray, np.ndarray]:
     _assert_folds_in_range(folds)
@@ -96,18 +96,20 @@ def load_data_mean_std(
     return (mean, std)
 
 
-_metadata = Union[_FOLDS, gpd.GeoDataFrame, Callable[..., gpd.GeoDataFrame]]
+_metadata = _FOLDS | gpd.GeoDataFrame | Callable[..., gpd.GeoDataFrame]
 class PASTISDatasetS2(Dataset):
     PROPS = _PROPS
 
     def __init__(
             self,
-            data_dir: Union[str, Path],
+            data_dir: str | Path,
             metadata: _metadata = _PROPS["folds"],
+            with_datetime: bool = True,
             normalize: bool = True,
-            transform: Optional[Callable[[tuple[np.ndarray, np.ndarray]], Any]] = None
+            transform: Callable[[dict], Any] | None = None
             ):
         self.data_dir = Path(data_dir)
+        self.with_datetime = with_datetime
         self.normalize = normalize
         self.transform = transform
 
@@ -157,10 +159,21 @@ class PASTISDatasetS2(Dataset):
             self.norm[1][None, :, None, None]
             )
 
+    def _get_dates(self, iloc: int) -> np.ndarray:
+        dates = self.metadata.iloc[iloc]["dates-S2"]
+        dates = json.loads(dates)
+        dates = {k: dates[k] for k in sorted(dates.keys(), key=lambda x: int(x))}
+        dates = np.array([
+            np.datetime64(
+                f"{str(date)[:4]}-{str(date)[4:6]}-{str(date)[6:]}"
+                ) for date in dates.values()
+            ])
+        return dates
+
     def __len__(self):
         return len(self.metadata)
     
-    def __getitem__(self, idx: int) -> tuple[Any, Any]:
+    def __getitem__(self, idx: int) -> dict:
         patch_id = self.metadata.iloc[idx]["ID_PATCH"]
         data = self._load_patch_data(patch_id).astype(np.float32)
         target = self._load_segmentation_annotation(patch_id).astype(np.int64)
@@ -168,23 +181,32 @@ class PASTISDatasetS2(Dataset):
         if self.normalize:
             data = self._normalize_data(data)
 
+        sample = {
+            "data": data,
+            "target": target,
+        }
+
+        if self.with_datetime:
+            sample["dates"] = self._get_dates(idx)
+
         if self.transform:
-            data, target = self.transform((data, target))
+            sample = self.transform(sample)
         
-        return (data, target)
+        return sample
 
 
 class PASTISSubpatchedDatasetS2(PASTISDatasetS2):
     def __init__(
             self,
-            data_dir: Union[str, Path],
+            data_dir: str | Path,
             subpatch_size: int,
             metadata: _metadata = _PROPS["folds"],
             subpatching_mode: _SUBPATCHING_MODE = "sequential",
+            with_datetime: bool = True,
             normalize: bool = True,
-            transform: Optional[Callable[[tuple[np.ndarray, np.ndarray]], Any]] = None
+            transform: Callable[[dict], Any] | None = None
             ):
-        super().__init__(data_dir, metadata, normalize, transform)
+        super().__init__(data_dir, metadata, with_datetime, normalize, transform)
         self.subpatch_size = subpatch_size
         assert subpatching_mode in ["sequential", "stride", "equidistant", "random"],\
             "Subpatching mode must be one of 'sequential', 'stride', 'equidistant' or 'random'"
@@ -223,13 +245,13 @@ class PASTISSubpatchedDatasetS2(PASTISDatasetS2):
                 subpatch["Timestamp_ids"] = timestamps[i]
                 lines.append(subpatch)
         
-        self.metadata_df = gpd.GeoDataFrame(lines, columns=columns)
+        self.metadata = gpd.GeoDataFrame(lines, columns=columns)
 
     def __len__(self):
-        return len(self.metadata_df)
+        return len(self.metadata)
     
-    def __getitem__(self, idx: int) -> tuple[Any, Any]:
-        subpatch = self.metadata_df.iloc[idx]
+    def __getitem__(self, idx: int) -> dict:
+        subpatch = self.metadata.iloc[idx]
         patch_id = subpatch["ID_PATCH"]
         data = self._load_patch_data(patch_id).astype(np.float32)
         target = self._load_segmentation_annotation(patch_id).astype(np.int64)
@@ -240,52 +262,17 @@ class PASTISSubpatchedDatasetS2(PASTISDatasetS2):
         if self.normalize:
             data = self._normalize_data(data)
 
-        if self.transform:
-            data, target = self.transform((data, target))
-        
-        return (data, target)
+        sample = {
+            "data": data,
+            "target": target,
+        }
 
-
-class PASTISDatasetS2Multitarget(PASTISDatasetS2):
-    def __init__(
-            self,
-            data_dir: Union[str, Path],
-            metadata: _metadata = _PROPS["folds"],
-            normalize: bool = True,
-            transform: Optional[Callable[[tuple[np.ndarray, np.ndarray]], Any]] = None
-            ):
-        super().__init__(data_dir, metadata, normalize, transform)
-
-
-class PASTISSubpatchedDatasetS2Multitarget(PASTISSubpatchedDatasetS2):
-    def __init__(
-            self,
-            data_dir: Union[str, Path],
-            subpatch_size: int,
-            metadata: _metadata = _PROPS["folds"],
-            subpatching_mode: _SUBPATCHING_MODE = "sequential",
-            normalize: bool = True,
-            transform: Optional[Callable[[tuple[np.ndarray, np.ndarray]], Any]] = None
-            ):
-        super().__init__(
-            data_dir, subpatch_size, metadata, subpatching_mode, normalize, transform
-            )
-        
-    def __getitem__(self, idx: int) -> tuple[Any, Any]:
-        subpatch = self.metadata_df.iloc[idx]
-        patch_id = subpatch["ID_PATCH"]
-        data = self._load_patch_data(patch_id).astype(np.float32)
-        target = self._load_segmentation_annotation(patch_id).astype(np.int64)
-
-        timestamps = subpatch["Timestamp_ids"]
-        data = data[timestamps]
-        target = target[timestamps]
-
-        if self.normalize:
-            data = self._normalize_data(data)
+        if self.with_datetime:
+            dates = self._get_dates(idx)
+            dates = dates[timestamps]
+            sample["dates"] = dates
 
         if self.transform:
-            data, target = self.transform((data, target))
-
-        return (data, target)
-    
+            sample = self.transform(sample)
+        
+        return sample

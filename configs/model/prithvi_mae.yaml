@@ -1,0 +1,30 @@
+defaults:
+  - base.yaml
+  - override criterion: mse
+  - override optimizer: adamw
+  - override scheduler: null
+
+_target_: src.models.mae_module.MAEModule
+net:
+  _target_: src.models.modules.encoders.prithvi_mae.PrithviMAE
+  img_size: 224
+  patch_size: 16
+  in_channels: 6
+  embed_dim: 768
+  num_frames: 3
+  depth: 12
+  num_heads: 12
+  decoder_embed_dim: 512
+  decoder_depth: 8
+  decoder_num_heads: 16
+  mlp_ratio: 4.
+  norm_layer:
+    _target_: torch.nn.LayerNorm
+    _partial_: true
+  norm_pix_loss: false
+  coords_encoding: null
+  coords_scale_learn: false
+  drop_path: 0.
+  mask_ratio: 0.75
+optimizer:
+  lr: 1.5e-4

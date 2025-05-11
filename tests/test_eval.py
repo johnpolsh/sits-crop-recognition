@@ -6,7 +6,7 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, open_dict
 
 from src.eval import evaluate
-from src.train import train
+from src.train_segmentation import train
 
 
 @pytest.mark.slow
