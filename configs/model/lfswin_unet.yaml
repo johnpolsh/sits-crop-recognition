@@ -3,7 +3,7 @@ defaults:
 
 _target_: src.models.segmentation_module.SegmentationModule
 net:
-  _target_: src.models.modules.encoders.swin.TSwinEncoderDecoder
+  _target_: src.models.modules.encoders.lfswin.LFSwinEncoderDecoder
   img_size: 256
   patch_size: 4
   in_channels: 3
@@ -12,6 +12,8 @@ net:
   num_frames: 3
   tubelet_size: 1
   temporal_encoding: "doy"
+  temporal_layers: [3, 3, 3, 3, 3]
+  temporal_dropout: 0.1
   depths: [2, 2, 6, 2]
   num_heads: [3, 6, 12, 24]
   window_size: 8

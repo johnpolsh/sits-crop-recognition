@@ -137,6 +137,8 @@ class SwinUNetDecoder(Decoder):
             self,
             in_channels: int,
             output_resolution: _int_or_tuple_2_t,
+            scale_factor: int = 2,
+            num_classes: int = 2,
             depths: tuple[int, ...] = (2, 2, 6, 2),
             num_heads: tuple[int, ...] = (3, 6, 12, 24),
             window_size: int = 8,
@@ -185,6 +187,13 @@ class SwinUNetDecoder(Decoder):
         
         self.num_features = in_channels // (2 ** self.num_layers)
         self.norm = norm_layer(self.num_features)
+
+        self.head = FinalExpandHead(
+            self.num_features,
+            scale_factor,
+            num_classes,
+            norm_layer
+            )
     
     @property
     def decoder_params(self):
@@ -206,5 +215,5 @@ class SwinUNetDecoder(Decoder):
             x = self.cat_layers[i](x)
 
         x = self.norm(x)
-        x = x.permute(0, 3, 1, 2)
+        x = self.head(x)
         return x

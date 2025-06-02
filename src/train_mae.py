@@ -30,7 +30,8 @@ from src.utils import (
     task_wrapper,
 )
 
-log = RankedLogger(__name__, rank_zero_only=True)
+
+_logger = RankedLogger(__name__, rank_zero_only=True)
 
 
 @task_wrapper
@@ -38,22 +39,22 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if cfg.get("seed"):
         L.seed_everything(cfg.seed, workers=True)
 
-    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
+    _logger.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
 
-    log.info(f"Instantiating model <{cfg.model._target_}>")
+    _logger.info(f"Instantiating model <{cfg.model._target_}>")
     model: LightningModule = hydra.utils.instantiate(cfg.model)
 
-    log.info("Instantiating callbacks...")
+    _logger.info("Instantiating callbacks...")
     callbacks: List[Callback] = instantiate_callbacks(cfg.get("callbacks"))
 
-    log.info("Instantiating loggers...")
+    _logger.info("Instantiating loggers...")
     logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
 
-    log.info("Instantiating plugins...")
+    _logger.info("Instantiating plugins...")
     plugins: List = instantiate_plugins(cfg.get("plugins"))
 
-    log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
+    _logger.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(
         cfg.trainer,
         callbacks=callbacks,
@@ -71,11 +72,11 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     }
 
     if logger:
-        log.info("Logging hyperparameters!")
+        _logger.info("Logging hyperparameters!")
         log_hyperparameters(object_dict)
 
     if cfg.get("train"):
-        log.info("Starting training!")
+        _logger.info("Starting training!")
         trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
 
     train_metrics = trainer.callback_metrics

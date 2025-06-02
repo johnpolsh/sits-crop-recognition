@@ -5,9 +5,6 @@ import numpy as np
 import torch
 from timm.layers.classifier import ClassifierHead
 from timm.models.vision_transformer import get_init_weights_vit
-from timm.models.swin_transformer_v2 import (
-    SwinTransformerV2Block
-)
 from torch import nn
 from torch.nn import functional as F
 from typing import (
@@ -23,15 +20,13 @@ from .layers import (
     PatchEmbed3D,
     TemporalEncoder
 )
-from .swin_3d import SwinTransformerStage3D
+from .swin import SwinTransformerStage
 from ..functional import (
     _int_or_tuple_2_t,
     _int_or_tuple_3_t,
     Format,
     Format3D,
     named_apply,
-    to_2tuple,
-    to_3tuple
 )
 from ....utils.pylogger import RankedLogger
 
@@ -39,140 +34,38 @@ from ....utils.pylogger import RankedLogger
 _logger = RankedLogger(__name__, rank_zero_only=True)
 
 
-class PatchMerging(nn.Module):
+class TemporalFusionBlock(nn.Module):
     def __init__(
             self,
             dim: int,
-            dim_scale: int = 2,
-            norm_layer: Callable[..., nn.Module] = nn.LayerNorm
+            num_layers: int = 3,
+            dropout: float = 0.1,
+            bidirectional: bool = False,
             ):
         super().__init__()
-        self.dim = dim
-        self.dim_scale = dim_scale
-        self.out_dim = dim_scale * dim
-        self.norm = norm_layer(dim * dim_scale**2)
-        self.reduction = nn.Linear(dim * dim_scale**2, self.out_dim, bias=False)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, H, W, C = x.shape
-        assert H % self.dim_scale == 0,\
-            f"Expected height `{H}` to be divisible by `{self.dim_scale}`"
-        assert W % self.dim_scale == 0,\
-            f"Expected width `{W}` to be divisible by `{self.dim_scale}`"
-        x = x.reshape(
-            B,
-            H // self.dim_scale,
-            self.dim_scale,
-            W // self.dim_scale,
-            self.dim_scale,
-            C
-            )
-        x = x.permute(0, 1, 3, 2, 4, 5).flatten(3)
-        x = self.norm(x)
-        x = self.reduction(x)
-        return x
-
-
-class SwinTransformerStage(nn.Module):
-    def __init__(
-            self,
-            dim: int,
-            input_resolution: _int_or_tuple_2_t,
-            depth: int,
-            num_heads: int,
-            window_size: _int_or_tuple_2_t,
-            downscale: bool = True,
-            mlp_ratio: float = 4.,
-            qkv_bias: bool = True,
-            proj_drop: float = 0.,
-            attn_drop: float = 0.,
-            drop_path: float | list[float] = 0.,
-            norm_layer: Callable[..., nn.Module] = nn.LayerNorm
-            ):
-        super().__init__()
-        _window_size = to_3tuple(window_size)
-        shift_size = (
-            _window_size[1] // 2,
-            _window_size[2] // 2
-            )
-        self.blocks = nn.Sequential(*[
-            SwinTransformerV2Block(
-                dim=dim,
-                input_resolution=input_resolution,
-                num_heads=num_heads,
-                window_size=window_size,
-                shift_size=0 if (i % 2 == 0) else shift_size,
-                mlp_ratio=mlp_ratio,
-                qkv_bias=qkv_bias,
-                proj_drop=proj_drop,
-                attn_drop=attn_drop,
-                drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
-                norm_layer=norm_layer # type: ignore
-                ) for i in range(depth)
-            ])
-        self.merging = PatchMerging(
-            dim,
-            dim_scale=2,
-            norm_layer=norm_layer
-            ) if downscale else nn.Identity()
-
-    def forward(
-            self,
-            x: torch.Tensor
-            ) -> torch.Tensor:
-        x = self.blocks(x)
-        x = self.merging(x)
-        return x
-
-
-class TemporalBlock(nn.Module):
-    def __init__(
-            self,
-            embed_dim: int,
-            input_resolution: _int_or_tuple_3_t,
-            depth: int,
-            num_heads: int,
-            window_size: _int_or_tuple_3_t,
-            mlp_ratio: float = 4.,
-            qkv_bias: bool = True,
-            proj_drop: float = 0.,
-            attn_drop: float = 0.,
-            drop_path: float | list[float] = 0.,
-            norm_layer: Callable[..., nn.Module] = nn.LayerNorm
-            ):
-        super().__init__()
-        self.block = SwinTransformerStage3D(
-            dim=embed_dim,
-            input_resolution=input_resolution,
-            depth=depth,
-            num_heads=num_heads,
-            window_size=window_size,
-            downscale=False,
-            mlp_ratio=mlp_ratio,
-            qkv_bias=qkv_bias,
-            proj_drop=proj_drop,
-            attn_drop=attn_drop,
-            drop_path=drop_path,
-            norm_layer=norm_layer
-            )
-        self.norm = norm_layer(embed_dim)
-        T = to_3tuple(input_resolution)[0]
-        self.mlp = nn.Sequential(
-            nn.Linear(T * embed_dim, embed_dim),
-            nn.GELU(),
-            nn.Linear(embed_dim, embed_dim)
+        self.rnn = nn.LSTM(
+            input_size=dim,
+            hidden_size=dim,
+            num_layers=num_layers,
+            bidirectional=bidirectional,
+            batch_first=True,
+            dropout=dropout
             )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.block(x)
-        x = x.permute(0, 2, 3, 1, 4)
-        x = x.flatten(3)
-        x = self.mlp(x)
-        x = self.norm(x)
+        B, T, H, W, C = x.shape
+        x = x.view(B, T, H * W, C)
+        x = x.permute(0, 2, 1, 3)
+        x = x.reshape(B * H * W, T, C)
+
+        x, _ = self.rnn(x)
+        x = x[:, -1, :]
+
+        x = x.view(B, H, W, -1)
         return x
 
 
-class TSwinTransformer(Encoder):
+class LFSwinTransformer(Encoder):
     def __init__(
             self,
             img_size: int = 256,
@@ -183,12 +76,6 @@ class TSwinTransformer(Encoder):
             num_frames: int = 3,
             tubelet_size: int = 1,
             temporal_encoding: _temporal_encoding_type = "doy",
-            temporal_depth: int = 3,
-            temporal_window_size: _int_or_tuple_3_t = (1, 8, 8),
-            temporal_num_heads: int = 4,
-            temporal_proj_drop_rate: float = 0.1,
-            temporal_attn_drop_rate: float = 0.1,
-            temporal_drop_path_rate: float = 0.1,
             depths: tuple[int, ...] = (2, 2, 6, 2),
             num_heads: tuple[int, ...] = (3, 6, 12, 24),
             window_size: _int_or_tuple_2_t = 8,
@@ -242,21 +129,9 @@ class TSwinTransformer(Encoder):
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         grid_size = self.patch_embed.grid_size
-        self.temporal_attn = TemporalBlock(
-            embed_dim=embed_dim,
-            input_resolution=(num_frames, grid_size[1], grid_size[2]),
-            depth=temporal_depth,
-            num_heads=temporal_num_heads,
-            window_size=temporal_window_size,
-            drop_path=temporal_drop_path_rate,
-            proj_drop=temporal_proj_drop_rate,
-            attn_drop=temporal_attn_drop_rate,
-            norm_layer=norm_layer
-            )
-
         self.num_layers = len(depths)
         dpr = [x.tolist() for x in torch.linspace(0, drop_path_rate, sum(depths)).split(depths)]
-        self.blocks = nn.Sequential(*[
+        self.blocks = nn.ModuleList([
             SwinTransformerStage(
                 dim=int(embed_dim * 2**i),
                 input_resolution=(
@@ -331,8 +206,11 @@ class TSwinTransformer(Encoder):
             x = self.add_temporal_embedding(x, temporal_coords)
         
         x = self.pos_drop(x)
-        x = self.temporal_attn(x)
-        x = self.blocks(x)
+
+        for block in self.blocks:
+            feats = [block(x[:, i]).unsqueeze(1) for i in range(x.shape[1])]
+            x = torch.cat(feats, dim=1)
+
         x = self.norm(x)
         return x
 
@@ -350,7 +228,7 @@ class TSwinTransformer(Encoder):
         return x
 
 
-class TSwinEncoderDecoder(TSwinTransformer, EncoderDecoder):
+class LFSwinEncoderDecoder(LFSwinTransformer, EncoderDecoder):
     def __init__(
             self,
             img_size: int = 256,
@@ -361,7 +239,8 @@ class TSwinEncoderDecoder(TSwinTransformer, EncoderDecoder):
             num_frames: int = 3,
             tubelet_size: int = 1,
             temporal_encoding: _temporal_encoding_type = "doy",
-            num_temporal_heads: int = 4,
+            temporal_layers: tuple[int, ...] = (3, 3, 3, 3, 3),
+            temporal_dropout: float = 0.1,
             depths: tuple[int, ...] = (2, 2, 6, 2),
             num_heads: tuple[int, ...] = (3, 6, 12, 24),
             window_size: _int_or_tuple_2_t = 8,
@@ -387,7 +266,6 @@ class TSwinEncoderDecoder(TSwinTransformer, EncoderDecoder):
             num_frames=num_frames,
             tubelet_size=tubelet_size,
             temporal_encoding=temporal_encoding,
-            num_temporal_heads=num_temporal_heads,
             depths=depths,
             num_heads=num_heads,
             window_size=window_size,
@@ -402,6 +280,15 @@ class TSwinEncoderDecoder(TSwinTransformer, EncoderDecoder):
             weight_init='skip',
             **kwargs
             )
+        
+        self.fusion_blocks = nn.ModuleList([
+            TemporalFusionBlock(
+                dim=int(embed_dim * 2**i),
+                num_layers=temporal_layers[i],
+                dropout=temporal_dropout,
+                bidirectional=False
+                ) for i in range(self.num_layers + 1)
+            ])
 
         decoder_kwargs.update({
             "in_channels": self.num_features,
@@ -438,13 +325,15 @@ class TSwinEncoderDecoder(TSwinTransformer, EncoderDecoder):
             x = self.add_temporal_embedding(x, temporal_coords)
         
         x = self.pos_drop(x)
-        x = self.temporal_attn(x)
 
         interms = []
-        for i in range(self.num_layers):
-            interms.append(self._permute_feature(x))
-            x = self.blocks[i](x)
+        for block, fusion_block in zip(self.blocks, self.fusion_blocks):
+            fused = fusion_block(x)
+            interms.append(self._permute_feature(fused))
+            feats = [block(x[:, i]).unsqueeze(1) for i in range(x.shape[1])]
+            x = torch.cat(feats, dim=1)
 
+        x = self.fusion_blocks[-1](x)
         x = self.norm(x)
         return interms + [self._permute_feature(x)]
     
