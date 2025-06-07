@@ -60,13 +60,11 @@ def train(cfg: DictConfig):
 
         if cfg.get("pretrained_model"):
             _logger.info(f"Loading pretrained model from {cfg.pretrained_model}")
-            state_dict = torch.load(cfg.pretrained_model)["state_dict"]
+            checkpoint = torch.load(cfg.pretrained_model, weights_only=True)
             encoder_state_dict = {
-                k.replace("net.encoder.", ""): v
-                for k, v in state_dict.items()
-                if k.startswith("net.encoder.")
+                k[len("encoder."):]: v for k, v in checkpoint["state_dict"].items() if k.startswith("encoder.")
             }
-            model.net.encoder.load_state_dict(encoder_state_dict) # type: ignore
+            model.net.load_state_dict(encoder_state_dict, strict=False)
 
         trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
 

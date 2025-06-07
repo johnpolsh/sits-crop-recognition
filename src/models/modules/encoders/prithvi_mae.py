@@ -67,26 +67,30 @@ class PrithviMAE(prithvi_mae.PrithviMAE, EncoderMAE):
     def forward_encoder(
             self,
             x: torch.Tensor,
-            temporal_coords: torch.Tensor | None = None,
-            location_coords: torch.Tensor | None = None,
-            ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
-        return self.encoder(x, temporal_coords, location_coords, self.mask_ratio)
-    
+            temporal_coords: None | torch.Tensor = None,
+            location_coords: None | torch.Tensor = None
+            ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        raise NotImplementedError("Call forward directly instead")
+
     def forward_decoder(
             self,
             features: list[torch.Tensor],
             idx_keep: torch.Tensor,
-            idx_mask: torch.Tensor,
+            idx_mask: torch.Tensor
             ) -> torch.Tensor:
-        return self.decoder(features, idx_keep, idx_mask)
-    
+        raise NotImplementedError("Call forward directly instead")
+
     def forward( # type: ignore
             self,
             x: torch.Tensor,
             temporal_coords: None | torch.Tensor = None,
-            location_coords: None | torch.Tensor = None,
+            location_coords: None | torch.Tensor = None
             ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        latent, mask, ids_restore = self.forward_encoder(x, temporal_coords, location_coords)
-        pred = self.forward_decoder(latent, ids_restore, mask)
+        if len(x.shape) == 4 and self.encoder.patch_embed.input_size[0] == 1: # type: ignore
+            # add time dim
+            x = x.unsqueeze(2)
+
+        latent, mask, ids_restore = self.encoder(x, temporal_coords, location_coords, self.mask_ratio)
+        pred = self.decoder(latent, ids_restore, temporal_coords, location_coords, input_size=x.shape)
         loss = self.forward_loss(x, pred, mask)
         return pred, loss, ids_restore, mask
