@@ -1,12 +1,19 @@
 # @package _global_
 
 defaults:
-  - override /data: pastis_subpatched.yaml
-  - override /trainer: gpu.yaml
+  - override /data: pastis_subpatched
+  - override /trainer: gpu
 
 experiment_name: "pastis_mae"
 tags:
   dataset: "pastis_subpatched"
+
+callbacks:
+  log_batch_images:
+    handler:
+      train:
+        - _target_: src.models.mae_module.plot_prediction_patches
+          _partial_: true
 
 num_frames: 4
 tubelet_size: 1
@@ -16,6 +23,10 @@ model:
     in_channels: 10
     num_frames: ${num_frames}
     tubelet_size: ${tubelet_size}
+  optimizer:
+    lr: 1e-5
+    weight_decay: 0.05
+  scheduler: null
 
 trainer:
   max_epochs: 200

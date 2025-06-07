@@ -2,7 +2,7 @@
 
 import torch
 import numpy as np
-from typing import TypeVar
+from typing import Any, TypeVar
 
 
 Transformable = TypeVar("Transformable", np.ndarray, torch.Tensor)
@@ -33,16 +33,23 @@ def vflip(data: Transformable) -> Transformable:
         return np.flip(data, axis=-2)
 
 
-def mean(data: Transformable, axis: int, keepdim: bool = False) -> Transformable:
+def mean(data: Transformable, axis: Any = None, **kwargs) -> Transformable:
     if isinstance(data, torch.Tensor):
-        return data.mean(dim=axis, keepdim=keepdim)
+        return data.mean(dim=axis, **kwargs)
     else:
-        return np.mean(data, axis=axis, keepdims=keepdim)
+        return np.mean(data, axis=axis, **kwargs)
 
 
-def median(data: Transformable, axis: int, keepdim: bool = False) -> Transformable:
+def median(data: Transformable, axis: Any = None, **kwargs) -> Transformable:
     if isinstance(data, torch.Tensor):
-        return data.median(dim=axis, keepdim=keepdim)[0]
+        return data.median(dim=axis, **kwargs)[0]
     else:
-        return np.median(data, axis=axis, keepdims=keepdim)
+        return np.median(data, axis=axis, **kwargs)
+    
+
+def unique(data: Transformable, axis: Any = None, **kwargs) -> Transformable | tuple[Transformable, ...]:
+    if isinstance(data, torch.Tensor):
+        return torch.unique(data, dim=axis, **kwargs)
+    else:
+        return np.unique(data, axis=axis, **kwargs)
     

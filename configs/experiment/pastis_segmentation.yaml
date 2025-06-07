@@ -21,4 +21,4 @@ model:
     ignore_index: 19
 
 trainer:
-  max_epochs: 120
+  max_epochs: 60

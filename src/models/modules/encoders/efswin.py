@@ -21,11 +21,12 @@ from .layers import (
     TemporalEncoder
 )
 from .swin import SwinTransformerStage
+from ..decoders.decoder import Decoder
 from ..functional import (
     _int_or_tuple_2_t,
     Format,
     Format3D,
-    named_apply,
+    named_apply
 )
 from ....utils.pylogger import RankedLogger
 
@@ -33,38 +34,62 @@ from ....utils.pylogger import RankedLogger
 _logger = RankedLogger(__name__, rank_zero_only=True)
 
 
-class TemporalFusionBlock(nn.Module):
+class TemporalFusionRNN(nn.Module):
     def __init__(
             self,
             dim: int,
-            num_layers: int = 3,
-            dropout: float = 0.1,
-            bidirectional: bool = False,
+            dropout: float = 0.1
             ):
         super().__init__()
-        self.rnn = nn.LSTM(
+        self.rnn = nn.GRU(
             input_size=dim,
             hidden_size=dim,
-            num_layers=num_layers,
-            bidirectional=bidirectional,
+            num_layers=2,
             batch_first=True,
             dropout=dropout
+            )
+        self.mlp = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim, dim)
             )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, H, W, C = x.shape
-        x = x.view(B, T, H * W, C)
+        x = x.reshape(B, T, H * W, C)
         x = x.permute(0, 2, 1, 3)
         x = x.reshape(B * H * W, T, C)
-
         x, _ = self.rnn(x)
         x = x[:, -1, :]
-
         x = x.view(B, H, W, -1)
+        x = self.mlp(x)
         return x
 
 
-class LFSwinTransformer(Encoder):
+class TemporalFusionMlp(nn.Module):
+    def __init__(
+            self,
+            dim: int,
+            output_dim: int,
+            dropout: float = 0.1
+            ):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim, output_dim)
+            )
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.permute(0, 2, 3, 1, 4)
+        x = x.flatten(3)
+        x = self.mlp(x)
+        return x
+
+
+class EFSwinTransformer(Encoder):
     def __init__(
             self,
             img_size: int = 256,
@@ -75,6 +100,7 @@ class LFSwinTransformer(Encoder):
             num_frames: int = 3,
             tubelet_size: int = 1,
             temporal_encoding: _temporal_encoding_type = "doy",
+            temporal_fusion_dropout: float = 0.1,
             depths: tuple[int, ...] = (2, 2, 6, 2),
             num_heads: tuple[int, ...] = (3, 6, 12, 24),
             window_size: _int_or_tuple_2_t = 8,
@@ -128,9 +154,15 @@ class LFSwinTransformer(Encoder):
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         grid_size = self.patch_embed.grid_size
+        self.fusion_layer = TemporalFusionMlp(
+            dim=embed_dim * grid_size[0],
+            output_dim=embed_dim,
+            dropout=temporal_fusion_dropout
+            )
+        
         self.num_layers = len(depths)
         dpr = [x.tolist() for x in torch.linspace(0, drop_path_rate, sum(depths)).split(depths)]
-        self.blocks = nn.ModuleList([
+        self.blocks = nn.Sequential(*[
             SwinTransformerStage(
                 dim=int(embed_dim * 2**i),
                 input_resolution=(
@@ -167,7 +199,9 @@ class LFSwinTransformer(Encoder):
     def backbone_params(self):
         return itertools.chain(
             self.patch_embed.parameters(),
+            self.temporal_embed.parameters(),
             self.pos_drop.parameters(),
+            self.fusion_layer.parameters(),
             self.blocks.parameters(),
             self.norm.parameters()
             )
@@ -205,14 +239,32 @@ class LFSwinTransformer(Encoder):
             x = self.add_temporal_embedding(x, temporal_coords)
         
         x = self.pos_drop(x)
-
-        for block in self.blocks:
-            feats = [block(x[:, i]).unsqueeze(1) for i in range(x.shape[1])]
-            x = torch.cat(feats, dim=1)
-
+        x = self.fusion_layer(x)
+        x = self.blocks(x)
         x = self.norm(x)
         return x
 
+    def forward_features(
+            self,
+            x: torch.Tensor,
+            temporal_coords: torch.Tensor | None = None,
+            ) -> list[torch.Tensor]:
+        x = self.patch_embed(x)
+
+        if temporal_coords is not None:
+            x = self.add_temporal_embedding(x, temporal_coords)
+        
+        x = self.pos_drop(x)
+        x = self.fusion_layer(x)
+
+        interms = []
+        for i in range(self.num_layers):
+            interms.append(x.permute(0, 3, 1, 2))
+            x = self.blocks[i](x)
+
+        x = self.norm(x)
+        return interms + [x.permute(0, 3, 1, 2)]
+    
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
         x = self.head(x, pre_logits=pre_logits)
         return x
@@ -227,7 +279,10 @@ class LFSwinTransformer(Encoder):
         return x
 
 
-class LFSwinEncoderDecoder(LFSwinTransformer, EncoderDecoder):
+class EFSwinEncoderDecoder(EncoderDecoder):
+    encoder: Encoder
+    decoder: Decoder
+
     def __init__(
             self,
             img_size: int = 256,
@@ -238,8 +293,7 @@ class LFSwinEncoderDecoder(LFSwinTransformer, EncoderDecoder):
             num_frames: int = 3,
             tubelet_size: int = 1,
             temporal_encoding: _temporal_encoding_type = "doy",
-            temporal_layers: tuple[int, ...] = (3, 3, 3, 3, 3),
-            temporal_dropout: float = 0.1,
+            num_temporal_heads: int = 4,
             depths: tuple[int, ...] = (2, 2, 6, 2),
             num_heads: tuple[int, ...] = (3, 6, 12, 24),
             window_size: _int_or_tuple_2_t = 8,
@@ -256,7 +310,8 @@ class LFSwinEncoderDecoder(LFSwinTransformer, EncoderDecoder):
             weight_init: Literal["jax", "jax_nlhb", "moco", "skip", ""] = '',
             **kwargs
             ):
-        super().__init__(
+        super().__init__()
+        self.encoder = EFSwinTransformer(
             img_size=img_size,
             patch_size=patch_size,
             in_channels=in_channels,
@@ -265,6 +320,7 @@ class LFSwinEncoderDecoder(LFSwinTransformer, EncoderDecoder):
             num_frames=num_frames,
             tubelet_size=tubelet_size,
             temporal_encoding=temporal_encoding,
+            num_temporal_heads=num_temporal_heads,
             depths=depths,
             num_heads=num_heads,
             window_size=window_size,
@@ -279,63 +335,18 @@ class LFSwinEncoderDecoder(LFSwinTransformer, EncoderDecoder):
             weight_init='skip',
             **kwargs
             )
-        
-        self.fusion_blocks = nn.ModuleList([
-            TemporalFusionBlock(
-                dim=int(embed_dim * 2**i),
-                num_layers=temporal_layers[i],
-                dropout=temporal_dropout,
-                bidirectional=False
-                ) for i in range(self.num_layers + 1)
-            ])
 
         decoder_kwargs.update({
-            "in_channels": self.num_features,
-            "output_resolution": self.patch_embed.grid_size[1:],
+            "in_channels": self.encoder.num_features,
+            "output_resolution": self.encoder.patch_embed.grid_size[1:],
             "scale_factor": patch_size,
             "num_classes": num_classes
             })
         self.decoder = self.create_decoder(decoder, **decoder_kwargs)
         
         if weight_init != 'skip':
-            self.init_weights(weight_init)
+            self.encoder.init_weights(weight_init)
 
-    @property
-    def backbone_params(self): # TODO
-        return itertools.chain(
-            self.patch_embed.parameters(),
-            self.pos_drop.parameters(),
-            self.blocks.parameters(),
-            self.norm.parameters()
-            )
-
-    def _permute_feature(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.permute(0, 3, 1, 2)
-        return x
-
-    def forward_features(
-            self,
-            x: torch.Tensor,
-            temporal_coords: torch.Tensor | None = None,
-            ) -> list[torch.Tensor]:
-        x = self.patch_embed(x)
-
-        if temporal_coords is not None:
-            x = self.add_temporal_embedding(x, temporal_coords)
-        
-        x = self.pos_drop(x)
-
-        interms = []
-        for block, fusion_block in zip(self.blocks, self.fusion_blocks):
-            fused = fusion_block(x)
-            interms.append(self._permute_feature(fused))
-            feats = [block(x[:, i]).unsqueeze(1) for i in range(x.shape[1])]
-            x = torch.cat(feats, dim=1)
-
-        x = self.fusion_blocks[-1](x)
-        x = self.norm(x)
-        return interms + [self._permute_feature(x)]
-    
     def forward_decoder(
             self,
             features: list[torch.Tensor]
@@ -343,7 +354,7 @@ class LFSwinEncoderDecoder(LFSwinTransformer, EncoderDecoder):
         x = self.decoder(features)
         x = F.interpolate(
             x,
-            size=(self.img_size, self.img_size),
+            size=(self.encoder.img_size, self.encoder.img_size),
             mode='bilinear',
             align_corners=True
             )
@@ -354,6 +365,6 @@ class LFSwinEncoderDecoder(LFSwinTransformer, EncoderDecoder):
             x: torch.Tensor,
             temporal_coords: torch.Tensor | None = None,
             ) -> torch.Tensor:
-        features = self.forward_features(x, temporal_coords)
+        features = self.encoder.forward_features(x, temporal_coords)
         x = self.forward_decoder(features)
         return x

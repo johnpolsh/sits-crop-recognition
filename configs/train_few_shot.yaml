@@ -3,7 +3,6 @@
 defaults:
   - _self_
   - callbacks:
-    - rich_model_summary
     - rich_progress_bar
     - log_batch_images
   - data: null
@@ -21,9 +20,8 @@ defaults:
   - optional local: default.yaml
   - debug: null
 
-callbacks:
-  rich_model_summary:
-    max_depth: -1
+trainer:
+  log_every_n_steps: 1 # log minimum of number of shots
 
 experiment_name: null
 experiment_description: "A simple template to train a model with PyTorch Lightning"
@@ -36,6 +34,8 @@ tags:
   description: null # not the same as experiment_description, this is relative to the run
   version: "0.1"
 
-optimized_metric: "train/psnr"
+optimized_metric: "val/acc"
+k_shots: [1, 5, 10, 20]
+pretrained_model: null
 ckpt_path: null
 seed: 42

@@ -1,31 +1,19 @@
 #
 
-import matplotlib.gridspec as gridspec
-import matplotlib.patches as patches
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-import matplotlib.colors as mcolors
 import numpy as np
-import torch
-from matplotlib import colormaps
 from torch import nn
 from torchmetrics import (
     MeanSquaredError,
     PeakSignalNoiseRatio
 )
-from typing import Any, Literal, Optional, Union
+from typing import Optional, Union
 from .base_module import BaseModule
-from  .modules.functional import (
-    depatchify_temporal
-)
 from ..utils.plotting import (
-    img_tensor_to_numpy,
     make_grid_tensor,
-    mask_tensor_to_rgb_tensor,
+    img_tensor_to_numpy,
     normalize_img_tensor,
-    pick_channels_tensor
 )
-from ..utils.scripting import extract_signature
 
 
 def plot_prediction_patches(
@@ -37,19 +25,21 @@ def plot_prediction_patches(
         idx: int = -1
         ):
     logits = outputs["logits"][idx].cpu().detach()
-    targets = outputs["target"][idx].cpu().detach()
+    targets = outputs["data"][idx].cpu().detach()
 
-    logits = pl_module.net.unpatchify(logits.unsqueeze(dim=0))
-    targets = pl_module.net.unpatchify(targets.unsqueeze(dim=0))
+    logits = pl_module.net.unpatchify(logits.unsqueeze(dim=0)).squeeze(dim=0) # type: ignore
 
     channels = [2, 1, 0]
     x = logits[channels]
     x = normalize_img_tensor(x)
+    x = make_grid_tensor(x)
     x = img_tensor_to_numpy(x).astype(np.float32)
+
     y = targets[channels]
     y = normalize_img_tensor(y)
+    y = make_grid_tensor(y)
     y = img_tensor_to_numpy(y).astype(np.float32)
-    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+    fig, ax = plt.subplots(2, 1, figsize=(10, 5))
     ax[0].imshow(x)
     ax[0].set_title("Predictions")
     ax[0].axis("off")
@@ -86,12 +76,12 @@ class MAEModule(BaseModule):
     def step(self, batch: dict):
         x = batch["data"]
         dates = batch.get("dates", None)
-        loss, pred, y, idx_keep, idx_mask = self.net(x, dates)
+        pred, loss, idx_keep, idx_mask = self.net(x, dates)
 
         results = {
             "data": x,
-            "logits": pred.detach(),
-            "target": y,
+            "logits": pred.detach().contiguous(),
+            "target": self.net.patchify(x).detach().contiguous(), # type: ignore
             "loss": loss,
         }
 

@@ -1,0 +1,46 @@
+defaults:
+  - base.yaml
+
+_target_: src.models.segmentation_module.SegmentationModule
+net:
+  _target_: src.models.modules.encoders.efswin.EFSwinEncoderDecoder
+  img_size: 256
+  patch_size: 4
+  in_channels: 3
+  num_classes: 2
+  embed_dim: 96
+  num_frames: 3
+  tubelet_size: 1
+  temporal_encoding: "doy"
+  temporal_fusion_layers: 3
+  temporal_fusion_dropout: 0.1
+  depths: [2, 2, 6, 2]
+  num_heads: [3, 6, 12, 24]
+  window_size: 8
+  decoder: "swin_unet"
+  decoder_kwargs: {}
+    # depths: [2, 2, 6, 2]
+    # num_heads: [3, 6, 12, 24]
+    # window_size: 8
+    # mlp_ratio: 4.
+    # qkv_bias: true
+    # proj_drop_rate: 0.
+    # attn_drop_rate: 0.
+    # drop_path_rate: 0.1
+    # norm_layer:
+    #   _target_: torch.nn.LayerNorm
+    #   _partial_: true
+  mlp_ratio: 4.0
+  qkv_bias: true
+  drop_rate: 0.0
+  proj_drop_rate: 0.0
+  attn_drop_rate: 0.1
+  drop_path_rate: 0.1
+  patch_norm: true
+  norm_layer:
+    _target_: torch.nn.LayerNorm
+    _partial_: true
+  weight_init: ""
+optimizer:
+  lr: 5e-4
+  

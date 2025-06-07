@@ -10,6 +10,7 @@ defaults:
   - logger: null # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - plugins: default.yaml
   - trainer: default.yaml
+  
   - paths: default.yaml
   - extras: default.yaml
   - hydra: default.yaml
@@ -64,4 +65,4 @@ test: true
 ckpt_path: null
 
 # seed for random number generators in pytorch, numpy and python.random
-seed: null
+seed: 42

@@ -28,7 +28,9 @@ class BaseDataModule(LightningDataModule):
             self,
             train: _dataset | DatasetParams | None,
             val: _dataset | DatasetParams | None = None,
+            disable_val: bool = False,
             test: _dataset | DatasetParams | None = None,
+            disable_test: bool = False,
             **kwargs: Any
             ):
         super().__init__()
@@ -36,6 +38,8 @@ class BaseDataModule(LightningDataModule):
         self.train = train
         self.val = val
         self.test = test
+        self._disable_val = disable_val
+        self._disable_test = disable_test
 
     def _prepocess_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         num_workers = kwargs.get("num_workers", 0)
@@ -64,6 +68,12 @@ class BaseDataModule(LightningDataModule):
         default_kwargs |= dataset_kwargs
         default_kwargs = self._prepocess_kwargs(default_kwargs)
         return default_kwargs
+    
+    def toggle_val(self, disable: bool = True):
+        self._disable_val = disable
+    
+    def toggle_test(self, disable: bool = True):
+        self._disable_test = disable
 
     def prepare_data(self):
         pass
@@ -121,12 +131,18 @@ class BaseDataModule(LightningDataModule):
             )
     
     def val_dataloader(self):
+        if self._disable_val:
+            return None
+        
         return DataLoader(
             dataset=self.val_dataset,
             **self._get_kwargs_or_default("val")
             )
     
     def test_dataloader(self):
+        if self._disable_test:
+            return None
+        
         return DataLoader(
             dataset=self.test_dataset,
             **self._get_kwargs_or_default("test")

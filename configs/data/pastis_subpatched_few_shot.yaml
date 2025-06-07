@@ -1,0 +1,64 @@
+defaults:
+  - few_shot.yaml
+
+min_items: 2048
+exclusive: true
+
+batch_size: 32
+pin_memory: true
+train:
+  dataset:
+    _target_: src.data.components.pastis.PASTISSubpatchedDatasetS2
+    _partial_: true
+    data_dir: ${oc.env:PASTIS_DATA_DIR}
+    subpatch_size: ${num_frames}
+    metadata: [4]
+    subpatching_mode: "sequential"
+    normalize: true
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: src.data.transforms.Transpose
+          dim0: 0
+          dim1: 1
+          keys: "data"
+        - _target_: src.data.transforms.TakeIndices
+          indices: 0
+          dim: 0
+          keys: "target"
+        - _target_: src.data.transforms.TemporalFeatureExtraction
+          encoding_type: "doy"
+          keys: "dates"
+        - _target_: src.data.transforms.ToTensor
+        - _target_: src.data.transforms.RandomKRotation
+          keys: ["data", "target"]
+        - _target_: src.data.transforms.RandomHFlip
+          keys: ["data", "target"]
+        - _target_: src.data.transforms.RandomVFlip
+          keys: ["data", "target"]
+  kwargs:
+    shuffle: true
+    drop_last: true
+val:
+  _target_: src.data.components.pastis.PASTISSubpatchedDatasetS2
+  _partial_: true
+  data_dir: ${oc.env:PASTIS_DATA_DIR}
+  subpatch_size: ${num_frames}
+  metadata: [5]
+  subpatching_mode: "sequential"
+  normalize: true
+  transform:
+    _target_: torchvision.transforms.Compose
+    transforms:
+      - _target_: src.data.transforms.Transpose
+        dim0: 0
+        dim1: 1
+        keys: "data"
+      - _target_: src.data.transforms.TakeIndices
+        indices: 0
+        dim: 0
+        keys: "target"
+      - _target_: src.data.transforms.TemporalFeatureExtraction
+        encoding_type: "doy"
+        keys: "dates"
+      - _target_: src.data.transforms.ToTensor

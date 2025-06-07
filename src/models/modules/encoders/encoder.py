@@ -1,6 +1,7 @@
 #
 
 import abc
+import torch
 from torch import nn
 from typing import (
     Any,
@@ -26,8 +27,25 @@ class Encoder(nn.Module, abc.ABC):
     def head_params(self) -> Iterable[nn.Parameter]:
         ...
 
+    @abc.abstractmethod
+    def forward_backbone(self, *args, **kwargs) -> Any:
+        ...
 
-class EncoderDecoder(nn.Module):
+    @abc.abstractmethod
+    def forward_features(self, *args, **kwargs) -> Any:
+        ...
+
+    @abc.abstractmethod
+    def forward_head(self, *args, **kwargs) -> Any:
+        ...
+
+    @abc.abstractmethod
+    def forward(self, *args, **kwargs) -> Any:
+        ...
+
+
+class EncoderDecoder(nn.Module, abc.ABC):
+    encoder: Encoder
     decoder: Decoder
 
     def __init__(self):
@@ -44,10 +62,6 @@ class EncoderDecoder(nn.Module):
     
     @property
     def head_params(self) -> Iterable[nn.Parameter]:
-        ...
-
-    @abc.abstractmethod
-    def forward_features(self, *args, **kwargs) -> Any:
         ...
 
     @abc.abstractmethod
@@ -70,4 +84,24 @@ class EncoderMAE(nn.Module, abc.ABC):
     
     @abc.abstractmethod
     def forward_encoder(self, *args, **kwargs) -> Any:
+        ...
+
+    @abc.abstractmethod
+    def forward_decoder(self, *args, **kwargs) -> Any:
+        ...
+
+    @abc.abstractmethod
+    def forward_loss(self, *args, **kwargs) -> Any:
+        ...
+
+    @abc.abstractmethod
+    def patchify(self, *args, **kwargs) -> torch.Tensor:
+        ...
+
+    @abc.abstractmethod
+    def unpatchify(self, *args, **kwargs) -> torch.Tensor:
+        ...
+
+    @abc.abstractmethod
+    def forward(self, *args, **kwargs) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         ...

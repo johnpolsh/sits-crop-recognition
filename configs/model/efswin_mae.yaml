@@ -5,25 +5,32 @@ defaults:
 
 _target_: src.models.mae_module.MAEModule
 net:
-  _target_: src.models.modules.encoders.swin_mae.TSwinMAE
-  img_size: 224
+  _target_: src.models.modules.encoders.efswin_mae.EFSwinMAE
+  img_size: 256
   patch_size: 4
   in_channels: 3
   embed_dim: 96
-  depths: [2, 4, 6, 4]
-  num_heads: [3, 8, 12, 24]
-  window_size: 8
+  num_frames: 3
+  tubelet_size: 1
   mask_ratio: 0.75
+  temporal_encoding: "doy"
+  temporal_fusion_dropout: 0.1
+  depths: [2, 2, 6, 2]
+  num_heads: [3, 6, 12, 24]
+  decoder_depths: [1, 1, 2, 2]
+  decoder_num_heads: [2, 2, 4, 6]
+  window_size: 8
   mlp_ratio: 4.0
   qkv_bias: true
   drop_rate: 0.0
   proj_drop_rate: 0.0
-  attn_drop_rate: 0.1
+  attn_drop_rate: 0.0
   drop_path_rate: 0.1
   patch_norm: true
-  norm_layer:
+  norm_layer: 
     _target_: torch.nn.LayerNorm
     _partial_: true
+  global_pool: "avg"
   weight_init: ""
 optimizer:
   lr: 5e-4

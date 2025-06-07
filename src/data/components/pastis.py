@@ -6,7 +6,12 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from torch.utils.data import Dataset
-from typing import Any, Callable, Literal, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Iterator,
+    Literal
+)
 from tqdm import tqdm
 from ..functional import normalize
 from ...utils.pylogger import RankedLogger
@@ -143,7 +148,7 @@ class PASTISDatasetS2(Dataset):
         mean = []
         std = []
         _logger.info("Calculating normalization mean and std")
-        for patch_id in tqdm(self.metadata["ID_PATCH"].unique()):
+        for patch_id in tqdm(self.metadata["ID_PATCH"].unique()): # type: ignore
             data = self._load_patch_data(patch_id)
             mean.append(data.mean(axis=(0, 2, 3)))
             std.append(data.std(axis=(0, 2, 3)))
@@ -159,7 +164,7 @@ class PASTISDatasetS2(Dataset):
             self.norm[1][None, :, None, None]
             )
 
-    def _get_dates(self, iloc: int) -> np.ndarray:
+    def _load_dates(self, iloc: int) -> np.ndarray:
         dates = self.metadata.iloc[iloc]["dates-S2"]
         dates = json.loads(dates)
         dates = {k: dates[k] for k in sorted(dates.keys(), key=lambda x: int(x))}
@@ -169,6 +174,27 @@ class PASTISDatasetS2(Dataset):
                 ) for date in dates.values()
             ])
         return dates
+
+    def _iter_targets(self) -> Iterator[np.ndarray]:
+        for _, patch in self.metadata.iterrows():
+            yield self._load_segmentation_annotation(patch["ID_PATCH"])
+
+    def _iter_data(self) -> Iterator[np.ndarray]:
+        for _, patch in self.metadata.iterrows():
+            yield self._load_patch_data(patch["ID_PATCH"]).astype(np.float32)
+
+    def _iter_dates(self) -> Iterator[np.ndarray]:
+        for _, patch in self.metadata.iterrows():
+            yield self._get_dates(patch["ID_PATCH"])
+
+    def _get_target(self, idx: int) -> np.ndarray:
+        return self._load_segmentation_annotation(self.metadata.iloc[idx]["ID_PATCH"]).astype(np.int64)
+    
+    def _get_data(self, idx: int) -> np.ndarray:
+        return self._load_patch_data(self.metadata.iloc[idx]["ID_PATCH"]).astype(np.float32)
+    
+    def _get_dates(self, idx: int) -> np.ndarray:
+        return self._load_dates(self.metadata.iloc[idx]["ID_PATCH"])
 
     def __len__(self):
         return len(self.metadata)
@@ -187,7 +213,7 @@ class PASTISDatasetS2(Dataset):
         }
 
         if self.with_datetime:
-            sample["dates"] = self._get_dates(idx)
+            sample["dates"] = self._load_dates(idx)
 
         if self.transform:
             sample = self.transform(sample)
@@ -268,7 +294,7 @@ class PASTISSubpatchedDatasetS2(PASTISDatasetS2):
         }
 
         if self.with_datetime:
-            dates = self._get_dates(idx)
+            dates = self._load_dates(idx)
             dates = dates[timestamps]
             sample["dates"] = dates
 

@@ -1,0 +1,9 @@
+defaults:
+  - base.yaml
+
+_target_: src.data.few_shot_datamodule.FewShotDataModule
+#_partial_: true
+
+k_shot: null
+min_items: 1
+exclusive: true

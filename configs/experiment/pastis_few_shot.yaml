@@ -1,0 +1,38 @@
+# @package _global_
+
+defaults:
+  - override /data: pastis_subpatched_few_shot.yaml
+  - override /trainer: gpu.yaml
+
+experiment_name: "pastis_few_shot"
+tags:
+  dataset: "pastis_subpatched_few_shot"
+
+data:
+  min_items: 2048
+
+callbacks:
+  log_batch_images:
+    handler:
+      val:
+        - _target_: src.models.segmentation_module.plot_temporal_prediction
+          _partial_: true
+
+num_frames: 4
+tubelet_size: 1
+model:
+  net:
+    img_size: 128
+    in_channels: 10
+    num_classes: 19
+    num_frames: ${num_frames}
+    tubelet_size: ${tubelet_size}
+  criterion:
+    ignore_index: 19
+  #optimizer_strategy: BUGBUG: File "/home/jpulzdeoliveira/.conda/envs/sits-crop-recognition/lib/python3.11/site-packages/torch/amp/grad_scaler.py", line 454, in step\ len(optimizer_state["found_inf_per_device"]) > 0\ AssertionError: No inf checks were recorded for this optimizer.
+  #  strategy: "step-freeze"
+  #  freeze_step: 5
+
+trainer:
+  max_epochs: 60
+  check_val_every_n_epoch: 10

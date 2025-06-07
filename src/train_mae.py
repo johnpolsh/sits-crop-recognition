@@ -1,24 +1,26 @@
+#
+
 import hydra
 import lightning as L
 import rootutils
+import torch
 from lightning import (
     Callback,
-    LightningDataModule,
-    LightningModule,
     Trainer
 )
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
+from pathlib import Path
 from typing import (
     Any,
     Dict,
-    List,
-    Optional,
-    Tuple
+    Optional
 )
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
+from src.data.base_datamodule import BaseDataModule
+from src.models.base_module import BaseModule
 from src.utils import (
     RankedLogger,
     extras,
@@ -35,24 +37,24 @@ _logger = RankedLogger(__name__, rank_zero_only=True)
 
 
 @task_wrapper
-def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def train(cfg: DictConfig) -> tuple[Dict[str, Any], Dict[str, Any]]:
     if cfg.get("seed"):
         L.seed_everything(cfg.seed, workers=True)
 
     _logger.info(f"Instantiating datamodule <{cfg.data._target_}>")
-    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
+    datamodule: BaseDataModule = hydra.utils.instantiate(cfg.data)
 
     _logger.info(f"Instantiating model <{cfg.model._target_}>")
-    model: LightningModule = hydra.utils.instantiate(cfg.model)
+    model: BaseModule = hydra.utils.instantiate(cfg.model)
 
     _logger.info("Instantiating callbacks...")
-    callbacks: List[Callback] = instantiate_callbacks(cfg.get("callbacks"))
+    callbacks: list[Callback] = instantiate_callbacks(cfg.get("callbacks"))
 
     _logger.info("Instantiating loggers...")
-    logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
+    logger: list[Logger] = instantiate_loggers(cfg.get("logger"))
 
     _logger.info("Instantiating plugins...")
-    plugins: List = instantiate_plugins(cfg.get("plugins"))
+    plugins: list = instantiate_plugins(cfg.get("plugins"))
 
     _logger.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(
@@ -75,13 +77,14 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         _logger.info("Logging hyperparameters!")
         log_hyperparameters(object_dict)
 
-    if cfg.get("train"):
-        _logger.info("Starting training!")
-        trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+    _logger.info("Starting training!")
+    trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
 
-    train_metrics = trainer.callback_metrics
+    _logger.info("Saving model...")
+    save_path = Path(cfg.paths.output_dir) / "model.pth"
+    torch.save(model.net.state_dict(), save_path)
 
-    metric_dict = train_metrics
+    metric_dict = trainer.callback_metrics
 
     return metric_dict, object_dict
 
