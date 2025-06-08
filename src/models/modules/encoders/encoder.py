@@ -61,15 +61,12 @@ class EncoderDecoder(nn.Module, abc.ABC):
         ...
     
     @property
+    @abc.abstractmethod
     def head_params(self) -> Iterable[nn.Parameter]:
         ...
 
     @abc.abstractmethod
     def forward_decoder(self, *args, **kwargs) -> Any:
-        ...
-
-    @abc.abstractmethod
-    def forward_head(self, *args, **kwargs) -> Any:
         ...
 
     @abc.abstractmethod

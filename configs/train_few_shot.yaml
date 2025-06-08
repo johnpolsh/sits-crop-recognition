@@ -35,7 +35,7 @@ tags:
   version: "0.1"
 
 optimized_metric: "val/acc"
-k_shots: [1, 5, 10, 20]
+k_shots: [1, 5, 10, 20, -1]
 pretrained_model: null
 ckpt_path: null
 seed: 42

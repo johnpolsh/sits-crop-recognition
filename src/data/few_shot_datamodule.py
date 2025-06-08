@@ -103,5 +103,5 @@ class FewShotDataModule(BaseDataModule):
 
     def setup(self, stage: str):
         super().setup(stage)
-        if stage in ["fit", "train"]:
+        if stage in ["fit", "train"] and self.k_shot >= 0:
             self.train_dataset = Subset(self.train_dataset, indices=self._get_subset_indices(self.train_dataset))

@@ -280,9 +280,6 @@ class EFSwinTransformer(Encoder):
 
 
 class EFSwinEncoderDecoder(EncoderDecoder):
-    encoder: Encoder
-    decoder: Decoder
-
     def __init__(
             self,
             img_size: int = 256,
@@ -336,6 +333,9 @@ class EFSwinEncoderDecoder(EncoderDecoder):
             **kwargs
             )
 
+        self.example_input_array = self.encoder.example_input_array
+        self.num_classes = num_classes
+
         decoder_kwargs.update({
             "in_channels": self.encoder.num_features,
             "output_resolution": self.encoder.patch_embed.grid_size[1:],
@@ -346,6 +346,14 @@ class EFSwinEncoderDecoder(EncoderDecoder):
         
         if weight_init != 'skip':
             self.encoder.init_weights(weight_init)
+
+    @property
+    def backbone_params(self):
+        return self.encoder.backbone_params
+
+    @property
+    def head_params(self):
+        return self.decoder.parameters()
 
     def forward_decoder(
             self,

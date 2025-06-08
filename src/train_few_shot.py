@@ -62,9 +62,10 @@ def train(cfg: DictConfig):
             _logger.info(f"Loading pretrained model from {cfg.pretrained_model}")
             checkpoint = torch.load(cfg.pretrained_model, weights_only=True)
             encoder_state_dict = {
-                k[len("encoder."):]: v for k, v in checkpoint["state_dict"].items() if k.startswith("encoder.")
+                k: v for k, v in checkpoint.items() if k.startswith("encoder.") and model.net.state_dict()[k].shape == v.shape
             }
-            model.net.load_state_dict(encoder_state_dict, strict=False)
+            missing_keys, unexpected_keys = model.net.load_state_dict(encoder_state_dict, strict=False)
+            _logger.debug(f"Encoder weights loaded. Missing keys: {missing_keys}, Unexpected keys: {unexpected_keys}")
 
         trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
 
