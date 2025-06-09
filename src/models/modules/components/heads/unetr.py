@@ -2,8 +2,8 @@
 
 import torch
 from torch import nn
-from torch.nn import functional
 from typing import Callable, Literal, Union
+from ...decoders.decoder import Decoder
 
 
 def intermediate_3d_conv_block(
@@ -127,7 +127,7 @@ class DeconvBottleneck(nn.Module):
         return x
 
 
-class DeconvHeadUNetTR(nn.Module):
+class DeconvHeadUNetTR(Decoder):
     def __init__(
             self,
             in_channels: int,
@@ -170,7 +170,11 @@ class DeconvHeadUNetTR(nn.Module):
                 stride=(1, 1, 1)
                 )
 
-    def forward(self, x: list[torch.Tensor]) -> torch.Tensor:
+    @property
+    def decoder_params(self):
+        return self.parameters()
+    
+    def forward(self, x: list[torch.Tensor]) -> torch.Tensor: # type: ignore
         assert len(x) == len(self.bottleneck) + 1, f"Number of intermediates must be equal to {len(self.bottleneck)}"
         out = self.deconv0(x[-1])
         for i, inter in enumerate(reversed(x[:-1])):

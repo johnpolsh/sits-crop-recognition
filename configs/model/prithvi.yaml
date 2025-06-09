@@ -3,12 +3,21 @@ defaults:
 
 _target_: src.models.segmentation_module.SegmentationModule
 net:
-  _target_: src.models.modules.prithvi.PrithviSegmentation
-  img_size: 256
-  in_chans: 6
-  num_frames: 3
+  _target_: src.models.modules.encoders.prithvi.PrithviEncoderDecoder
+  img_size: 224
+  patch_size: [1, 16, 16]
+  in_channels: 6
   num_classes: 2
-  bands: []
-  weights: ""
-  decoder: "TemporalAttention"
-  voxel_reduce: "conv"
+  embed_dim: 768
+  num_frames: 3
+  depth: 24
+  num_heads: 16
+  mlp_ratio: 4.
+  norm_layer:
+    _target_: torch.nn.LayerNorm
+    _partial_: true
+  coords_encoding: []
+  coords_scale_learn: false
+  drop_path: 0.1
+  drop_rate: 0.
+  global_pool: "avg"

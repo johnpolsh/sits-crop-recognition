@@ -33,6 +33,7 @@ class PatchExpand(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.expansion(x)
         B, H, W, C = x.shape
+        print(x.shape, self.dim_scale, C)
         x = x.reshape(
             B,
             H,
