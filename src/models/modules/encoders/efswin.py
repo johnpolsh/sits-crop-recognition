@@ -21,7 +21,6 @@ from .layers import (
     TemporalEncoder
 )
 from .swin import SwinTransformerStage
-from ..decoders.decoder import Decoder
 from ..functional import (
     _int_or_tuple_2_t,
     Format,
@@ -259,11 +258,11 @@ class EFSwinTransformer(Encoder):
 
         interms = []
         for i in range(self.num_layers):
-            interms.append(x.permute(0, 3, 1, 2))
+            interms.append(x)
             x = self.blocks[i](x)
 
         x = self.norm(x)
-        return interms + [x.permute(0, 3, 1, 2)]
+        return interms + [x]
     
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
         x = self.head(x, pre_logits=pre_logits)
@@ -359,6 +358,7 @@ class EFSwinEncoderDecoder(EncoderDecoder):
             self,
             features: list[torch.Tensor]
             ) -> torch.Tensor:
+        x = [feat.permute(0, 3, 1, 2) for feat in features]
         x = self.decoder(features)
         x = F.interpolate(
             x,

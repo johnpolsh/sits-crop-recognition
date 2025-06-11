@@ -2,7 +2,6 @@
 
 import numpy as np
 import torch
-from timm.models.vision_transformer import get_init_weights_vit
 from torch import nn
 from typing import (
     Callable,
@@ -14,7 +13,6 @@ from .efswin import EFSwinTransformer
 from ..decoders.swin_unet import SwinTransformerStageUp
 from ..functional import (
     _int_or_tuple_2_t,
-    named_apply,
     to_2tuple
 )
 
@@ -32,11 +30,13 @@ class SwinMAEDecoder(nn.Module):
             proj_drop_rate: float = 0.,
             attn_drop_rate: float = 0.,
             drop_path_rate: float = 0.1,
+            cat_features: bool = False,
             norm_layer: Callable[..., nn.Module] = nn.LayerNorm
             ):
         super().__init__()
         self.in_channels = in_channels
         self.num_layers = len(depths)
+        self.cat_features = cat_features
 
         self.cat_layers = nn.ModuleList([
             nn.Sequential(
@@ -73,17 +73,18 @@ class SwinMAEDecoder(nn.Module):
         self.num_features = in_channels // (2 ** self.num_layers)
         self.norm = norm_layer(self.num_features)
 
-    def _permute_feature(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.permute(0, 2, 3, 1)
-        return x
-
     def forward(self, features: list[torch.Tensor]) -> torch.Tensor:
-        x = self._permute_feature(features.pop())
-        for i, feat in enumerate(reversed(features)):
-            x = self.blocks[i](x)
-            feat = self._permute_feature(feat)
-            x = torch.cat([x, feat], dim=-1)
-            x = self.cat_layers[i](x)
+        if self.cat_features:
+            x = features.pop()
+            for i, feat in enumerate(reversed(features)):
+                x = self.blocks[i](x)
+                feat = feat
+                x = torch.cat([x, feat], dim=-1)
+                x = self.cat_layers[i](x)
+        else:
+            x = features.pop()
+            x = self.blocks(x)
+
         x = self.norm(x)
         return x
 
@@ -106,6 +107,7 @@ class EFSwinMAE(EncoderMAE):
             num_heads: tuple[int, ...] = (3, 6, 12, 24),
             decoder_depths: tuple[int, ...] = (1, 1, 2, 2),
             decoder_num_heads: tuple[int, ...] = (2, 2, 4, 6),
+            cat_features: bool = False,
             window_size: _int_or_tuple_2_t = 8,
             mlp_ratio: float = 4.,
             qkv_bias: bool = True,
@@ -169,7 +171,8 @@ class EFSwinMAE(EncoderMAE):
             proj_drop_rate=proj_drop_rate,
             attn_drop_rate=attn_drop_rate,
             drop_path_rate=drop_path_rate,
-            norm_layer=norm_layer
+            norm_layer=norm_layer,
+            cat_features=cat_features
             )
         self.proj = nn.Linear(
             embed_dim,
@@ -239,11 +242,11 @@ class EFSwinMAE(EncoderMAE):
 
         interms = []
         for i in range(self.encoder.num_layers):
-            interms.append(x.permute(0, 3, 1, 2))
+            interms.append(x)
             x = self.encoder.blocks[i](x)
 
         x = self.encoder.norm(x)
-        interms.append(x.permute(0, 3, 1, 2))
+        interms.append(x)
 
         return interms, idx_keep, idx_mask
 
@@ -254,7 +257,7 @@ class EFSwinMAE(EncoderMAE):
             idx_mask: torch.Tensor
             ) -> torch.Tensor:
         x = self.decoder(features)
-        B, H, W, C = x.shape
+        B, H, W, _ = x.shape
         x = self.proj(x)
         x = x.view(B, H * W, self.encoder.num_frames, -1)
         x = x.permute(0, 2, 1, 3)

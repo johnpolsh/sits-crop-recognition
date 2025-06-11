@@ -19,6 +19,7 @@ net:
   num_heads: [3, 6, 12, 24]
   decoder_depths: [1, 1, 2, 2]
   decoder_num_heads: [2, 2, 4, 6]
+  cat_features: false
   window_size: 8
   mlp_ratio: 4.0
   qkv_bias: true

@@ -76,12 +76,13 @@ class MAEModule(BaseModule):
     def step(self, batch: dict):
         x = batch["data"]
         dates = batch.get("dates", None)
-        pred, loss, idx_keep, idx_mask = self.net(x, dates)
+        pred, loss, idx_keep, _ = self.net(x, dates)
 
         results = {
             "data": x,
             "logits": pred.detach().contiguous(),
             "target": self.net.patchify(x).detach().contiguous(), # type: ignore
+            "idx_keep": idx_keep,
             "loss": loss,
         }
 
